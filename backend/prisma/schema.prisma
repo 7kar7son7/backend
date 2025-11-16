@@ -1,0 +1,184 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Channel {
+  id             String         @id @default(uuid()) @db.Uuid
+  externalId     String         @unique
+  name           String
+  description    String?
+  logoUrl        String?
+  category       String?
+  countryCode    String?        @db.VarChar(8)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  channelFollows FollowedItem[]
+  programs       Program[]
+
+  @@map("channels")
+}
+
+model Program {
+  id             String         @id @default(uuid()) @db.Uuid
+  channelId      String         @db.Uuid
+  externalId     String         @unique
+  title          String
+  description    String?
+  seasonNumber   Int?
+  episodeNumber  Int?
+  startsAt       DateTime       @db.Timestamptz(6)
+  endsAt         DateTime       @db.Timestamptz(6)
+  imageUrl       String?
+  tags           String[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  eventWindows   Event[]
+  programFollows FollowedItem[]
+  channel        Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, startsAt])
+  @@map("programs")
+}
+
+model FollowedItem {
+  id        String     @id @default(uuid()) @db.Uuid
+  deviceId  String
+  type      FollowType
+  channelId String?    @db.Uuid
+  programId String?    @db.Uuid
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  channel   Channel?   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  program   Program?   @relation(fields: [programId], references: [id], onDelete: Cascade)
+  events    Event[]    @relation("EventFollowers")
+
+  @@unique([deviceId, channelId], map: "follow_device_channel_unique")
+  @@unique([deviceId, programId], map: "follow_device_program_unique")
+  @@map("followed_items")
+}
+
+model Event {
+  id                 String              @id @default(uuid()) @db.Uuid
+  programId          String              @db.Uuid
+  initiatorDeviceId  String
+  status             EventStatus         @default(PENDING)
+  initiatedAt        DateTime            @default(now()) @db.Timestamptz(6)
+  validatedAt        DateTime?           @db.Timestamptz(6)
+  expiresAt          DateTime?           @db.Timestamptz(6)
+  followerCountLimit Int?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  confirmations      EventConfirmation[]
+  program            Program             @relation(fields: [programId], references: [id], onDelete: Cascade)
+  pointEntries       PointEntry[]
+  reminders          ReminderLog[]
+  followers          FollowedItem[]      @relation("EventFollowers")
+
+  @@index([programId, status])
+  @@map("events")
+}
+
+model EventConfirmation {
+  id           String      @id @default(uuid()) @db.Uuid
+  eventId      String      @db.Uuid
+  deviceId     String
+  choice       EventChoice
+  confirmedAt  DateTime    @default(now()) @db.Timestamptz(6)
+  delaySeconds Int?
+  reminderUsed Boolean     @default(false)
+  event        Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, deviceId], map: "event_device_unique")
+  @@index([deviceId, confirmedAt])
+  @@map("event_confirmations")
+}
+
+model ReminderLog {
+  id         String       @id @default(uuid()) @db.Uuid
+  eventId    String       @db.Uuid
+  deviceId   String
+  attempt    Int
+  kind       ReminderKind
+  sentAt     DateTime     @default(now()) @db.Timestamptz(6)
+  mutedNight Boolean      @default(false)
+  event      Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, deviceId, attempt], map: "reminder_unique_attempt")
+  @@index([deviceId, sentAt])
+  @@map("reminder_log")
+}
+
+model PointBalance {
+  deviceId     String       @id
+  totalPoints  Int          @default(0)
+  lastUpdated  DateTime     @updatedAt
+  lastActive   DateTime?
+  streakLength Int          @default(0)
+  entries      PointEntry[]
+
+  @@map("point_balance")
+}
+
+model PointEntry {
+  id          String       @id @default(uuid()) @db.Uuid
+  deviceId    String
+  points      Int
+  reason      PointReason
+  eventId     String?      @db.Uuid
+  description String?
+  createdAt   DateTime     @default(now()) @db.Timestamptz(6)
+  balance     PointBalance @relation(fields: [deviceId], references: [deviceId], onDelete: Cascade)
+  event       Event?       @relation(fields: [eventId], references: [id])
+
+  @@index([deviceId, createdAt])
+  @@map("point_entries")
+}
+
+model DeviceToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  deviceId   String
+  token      String    @unique
+  platform   String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  lastUsedAt DateTime? @db.Timestamptz(6)
+
+  @@index([deviceId])
+  @@map("device_tokens")
+}
+
+enum FollowType {
+  CHANNEL
+  PROGRAM
+}
+
+enum EventStatus {
+  PENDING
+  VALIDATED
+  CANCELLED
+  EXPIRED
+}
+
+enum EventChoice {
+  OPTION1
+  OPTION2
+}
+
+enum ReminderKind {
+  PUSH
+  LOCAL_FALLBACK
+}
+
+enum PointReason {
+  FAST_CONFIRM
+  REMINDER_CONFIRM
+  DAILY_STREAK
+  STREAK_BONUS
+  MANUAL_ADJUSTMENT
+  DOUBLE_CONFIRM
+}

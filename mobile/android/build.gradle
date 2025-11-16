@@ -1,0 +1,20 @@
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = "../build"
+subprojects {
+    if (project.projectDir.absolutePath.startsWith(rootProject.projectDir.absolutePath)) {
+        project.buildDir = "${rootProject.buildDir}/${project.name}"
+    }
+}
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}

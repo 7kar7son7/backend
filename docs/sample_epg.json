@@ -1,0 +1,69 @@
+{
+  "channels": [
+    {
+      "id": "tvp1",
+      "name": "TVP 1",
+      "category": "Publiczny",
+      "description": "Najważniejszy kanał telewizji publicznej.",
+      "programs": [
+        {
+          "id": "tvp1-2025-11-09-1900",
+          "title": "Teleexpress",
+          "description": "Serwis informacyjny w telegraficznym skrócie.",
+          "start": "2025-11-09T18:00:00Z",
+          "end": "2025-11-09T18:20:00Z",
+          "tags": ["news"]
+        },
+        {
+          "id": "tvp1-2025-11-09-2000",
+          "title": "Wiadomości",
+          "description": "Najważniejsze wydarzenia z kraju i ze świata.",
+          "start": "2025-11-09T19:00:00Z",
+          "end": "2025-11-09T19:30:00Z",
+          "tags": ["news", "live"]
+        }
+      ]
+    },
+    {
+      "id": "tvn",
+      "name": "TVN",
+      "category": "Ogólnotematyczny",
+      "description": "Komercyjny kanał z wiadomościami i rozrywką.",
+      "programs": [
+        {
+          "id": "tvn-2025-11-09-1930",
+          "title": "Fakty",
+          "description": "Wieczorny serwis informacyjny TVN.",
+          "start": "2025-11-09T18:30:00Z",
+          "end": "2025-11-09T19:00:00Z",
+          "tags": ["news"]
+        },
+        {
+          "id": "tvn-2025-11-09-2100",
+          "title": "Kuchenne Rewolucje",
+          "description": "Restaurant reality show z Magdą Gessler.",
+          "start": "2025-11-09T20:00:00Z",
+          "end": "2025-11-09T21:00:00Z",
+          "tags": ["reality", "food"]
+        }
+      ]
+    },
+    {
+      "id": "canalplusfilm",
+      "name": "Canal+ Film",
+      "category": "Film",
+      "description": "Kanał premium z nowościami kinowymi.",
+      "programs": [
+        {
+          "id": "canalplusfilm-2025-11-09-2015",
+          "title": "Premierowy seans: Głębia wydarzeń",
+          "description": "Thriller science fiction o tajemniczych sygnałach.",
+          "start": "2025-11-09T19:15:00Z",
+          "end": "2025-11-09T21:00:00Z",
+          "tags": ["movie", "thriller", "scifi"]
+        }
+      ]
+    }
+  ]
+}
+
