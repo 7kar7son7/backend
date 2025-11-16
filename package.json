@@ -1,0 +1,47 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "rimraf dist && tsc",
+    "start": "node dist/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "epg:import": "tsx src/scripts/import-epg.ts",
+    "epg:import:iptv": "tsx src/scripts/import-epg-iptv-org.ts",
+    "epg:prune": "tsx src/scripts/prune-non-pl-channels.ts",
+    "db:seed:pl": "tsx src/scripts/seed-polish-channels.ts",
+    "epg:import:pl": "tsx src/scripts/import-selected-channels.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/luxon": "^3.7.1",
+    "@types/node": "^24.10.0",
+    "prisma": "^6.19.0",
+    "rimraf": "^6.1.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.1.0",
+    "@fastify/helmet": "^13.0.2",
+    "@fastify/jwt": "^10.0.0",
+    "@fastify/sensible": "^6.0.3",
+    "@prisma/client": "^6.19.0",
+    "dotenv": "^17.2.3",
+    "fast-xml-parser": "^4.4.3",
+    "fastify": "^5.6.2",
+    "fastify-plugin": "^5.1.0",
+    "luxon": "^3.5.0",
+    "node-cron": "^4.2.1",
+    "pino-pretty": "^13.1.2",
+    "undici": "^7.16.0",
+    "zod": "^4.1.12"
+  }
+}
