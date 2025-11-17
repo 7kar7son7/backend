@@ -59,7 +59,7 @@ export default async function channelsRoutes(app: FastifyInstance) {
 
       return {
         ...base,
-        programs: (channel.programs ?? []).map((program) => ({
+        programs: (('programs' in channel && Array.isArray(channel.programs)) ? channel.programs : []).map((program: any) => ({
           id: program.id,
           title: program.title,
           channelId: program.channelId,

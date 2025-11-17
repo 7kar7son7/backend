@@ -6,7 +6,7 @@ import { PushNotificationService } from './push-notification.service';
 
 export class NotificationService {
   constructor(private readonly prisma: PrismaClient, private readonly logger: FastifyBaseLogger) {
-    this.pushNotification = new PushNotificationService(logger);
+    this.pushNotification = new PushNotificationService(prisma, logger);
   }
 
   private readonly pushNotification: PushNotificationService;
@@ -70,11 +70,8 @@ export class NotificationService {
         },
       },
       include: {
-        programFollows: {
-          include: {
-            channel: true,
-          },
-        },
+        channel: true,
+        programFollows: true,
       },
     });
 
