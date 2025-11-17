@@ -88,21 +88,31 @@ async function runSelectedImport(app: FastifyInstance) {
       { count: selected.length },
       'Importuję tylko kanały z listy IPTV_ORG_SELECTED_IDS.',
     );
-    await importIptvOrgEpg(app.prisma, app.log, {
-      url: env.EPG_SOURCE_URL,
-      file: env.EPG_SOURCE_FILE ?? process.env.EPG_SOURCE_FILE,
+    const options: Parameters<typeof importIptvOrgEpg>[2] = {
       verbose: false,
       channelIds: selected,
-    });
+    };
+    if (env.EPG_SOURCE_URL) {
+      options.url = env.EPG_SOURCE_URL;
+    }
+    if (env.EPG_SOURCE_FILE ?? process.env.EPG_SOURCE_FILE) {
+      options.file = env.EPG_SOURCE_FILE ?? process.env.EPG_SOURCE_FILE!;
+    }
+    await importIptvOrgEpg(app.prisma, app.log, options);
     return;
   }
 
   if (env.EPG_SOURCE_URL || env.EPG_SOURCE_FILE || process.env.EPG_SOURCE_FILE) {
-    await importIptvOrgEpg(app.prisma, app.log, {
-      url: env.EPG_SOURCE_URL,
-      file: env.EPG_SOURCE_FILE ?? process.env.EPG_SOURCE_FILE,
+    const options: Parameters<typeof importIptvOrgEpg>[2] = {
       verbose: false,
-    });
+    };
+    if (env.EPG_SOURCE_URL) {
+      options.url = env.EPG_SOURCE_URL;
+    }
+    if (env.EPG_SOURCE_FILE ?? process.env.EPG_SOURCE_FILE) {
+      options.file = env.EPG_SOURCE_FILE ?? process.env.EPG_SOURCE_FILE!;
+    }
+    await importIptvOrgEpg(app.prisma, app.log, options);
     return;
   }
 

@@ -6,7 +6,8 @@ loadEnv();
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).optional(),
   PORT: z.coerce.number().default(3000),
-  HOST: z.string().optional(),
+  // DevStudio / PaaS: nasłuchujemy na wszystkich interfejsach
+  HOST: z.string().default('0.0.0.0'),
   LOG_LEVEL: z
     .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
     .default('info'),
@@ -30,6 +31,8 @@ const envSchema = z.object({
   FCM_PROJECT_ID: z.string().optional(),
   FCM_CLIENT_EMAIL: z.string().optional(),
   FCM_PRIVATE_KEY: z.string().optional(),
+  FCM_SERVER_KEY: z.string().optional(),
+  DAILY_REMINDER_SCHEDULE: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);

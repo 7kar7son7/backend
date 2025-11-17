@@ -74,7 +74,7 @@ class _ProgramSchedulePageState extends ConsumerState<ProgramSchedulePage> {
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                      child: SearchBar(
+                      child: AppSearchBar(
                         hintText: 'Szukaj kanału lub programu...',
                         onChanged: (query) {
                           setState(() {

@@ -34,10 +34,16 @@ function parseArgs(argv: string[]) {
     } else if ((arg === '--file' || arg === '-f') && argv[i + 1]) {
       options.file = argv[i + 1]!;
       i += 1;
-    } else if (arg.startsWith('--url=')) {
-      options.url = arg.split('=')[1];
-    } else if (arg.startsWith('--file=')) {
-      options.file = arg.split('=')[1];
+    } else if (arg && arg.startsWith('--url=')) {
+      const urlValue = arg.split('=')[1];
+      if (urlValue) {
+        options.url = urlValue;
+      }
+    } else if (arg && arg.startsWith('--file=')) {
+      const fileValue = arg.split('=')[1];
+      if (fileValue) {
+        options.file = fileValue;
+      }
     }
   }
 
