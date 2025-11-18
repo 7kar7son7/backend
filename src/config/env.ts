@@ -1,7 +1,10 @@
 import { config as loadEnv } from 'dotenv';
 import { z } from 'zod';
 
-loadEnv();
+// W produkcji nie ładuj .env - zmienne są w process.env
+if (process.env.NODE_ENV !== 'production') {
+  loadEnv();
+}
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).optional(),
