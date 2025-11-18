@@ -1,0 +1,704 @@
+import { PrismaClient } from '@prisma/client';
+import { FastifyBaseLogger } from 'fastify';
+import { XMLParser } from 'fast-xml-parser';
+import { DateTime } from 'luxon';
+import { readFile } from 'node:fs/promises';
+import { fetch } from 'undici';
+import { isAbsolute, resolve } from 'node:path';
+
+import { env } from '../config/env';
+import { EpgImportService, type EpgChannel, type EpgFeed, type EpgProgram } from './epg-import.service';
+
+const DEFAULT_IPTV_URL = 'https://iptv-org.github.io/epg/guides/pl/pl.xml';
+const DEFAULT_LOGO_DATA_PATH = '../epg-source/temp/data/logos.json';
+const DEFAULT_CHANNEL_DATA_PATH = '../epg-source/temp/data/channels.json';
+
+const MAX_CHANNELS =
+  Number.parseInt(process.env.IPTV_ORG_MAX_CHANNELS ?? '', 10) ||
+  Number.parseInt(env.IPTV_ORG_MAX_CHANNELS ?? '', 10) ||
+  10000;
+
+const MAX_PROGRAM_DAYS =
+  Number.parseInt(process.env.IPTV_ORG_MAX_DAYS ?? '', 10) ||
+  Number.parseInt(env.IPTV_ORG_MAX_DAYS ?? '', 10) ||
+  7;
+
+const allowedPrefixesRaw =
+  process.env.IPTV_ORG_ALLOWED_PREFIXES ??
+  env.IPTV_ORG_ALLOWED_PREFIXES ??
+  'pl/';
+
+const allowedPrefixes = allowedPrefixesRaw
+  .split(',')
+  .map((value) => value.trim())
+  .filter((value) => value.length > 0 && value !== '*');
+
+const allowAllChannels =
+  allowedPrefixesRaw.split(',').some((value) => value.trim() === '*') ||
+  allowedPrefixes.length === 0;
+
+const envSelectedChannelIds = parseSelectedChannelIds(
+  process.env.IPTV_ORG_SELECTED_IDS ?? env.IPTV_ORG_SELECTED_IDS ?? '',
+);
+
+type SelectedChannelSet = {
+  isEmpty: boolean;
+  rawIds: Set<string>;
+  slugIds: Set<string>;
+};
+
+export function isChannelIdAllowed(channelId: string | null | undefined) {
+  if (!channelId) {
+    return false;
+  }
+  if (allowAllChannels) {
+    return true;
+  }
+  return allowedPrefixes.some((prefix) => channelId.startsWith(prefix));
+}
+
+export type IptvOrgImportOptions = {
+  url?: string;
+  file?: string;
+  verbose?: boolean;
+  channelIds?: string[];
+};
+
+interface IptvChannelNode {
+  '@_id': string;
+  'display-name': Array<string | { '#text': string }> | string | { '#text': string };
+  icon?: Array<{ '@_src': string }> | { '@_src': string } | string;
+}
+
+interface IptvProgrammeNode {
+  '@_start': string;
+  '@_stop'?: string;
+  '@_channel': string;
+  title?: Array<string | { '#text': string }> | string | { '#text': string };
+  desc?: Array<string | { '#text': string }> | string | { '#text': string };
+  category?: Array<string | { '#text': string }> | string | { '#text': string };
+}
+
+export async function importIptvOrgEpg(
+  prisma: PrismaClient,
+  logger: FastifyBaseLogger,
+  options: IptvOrgImportOptions = {},
+) {
+  const resolvedFile = resolvePathMaybe(options.file ?? env.EPG_SOURCE_FILE ?? process.env.EPG_SOURCE_FILE ?? null);
+  const finalUrl =
+    options.file != null
+      ? undefined
+      : options.url ?? env.EPG_SOURCE_URL ?? DEFAULT_IPTV_URL;
+
+  if (!resolvedFile && !finalUrl) {
+    throw new Error('Brak źródła feedu IPTV-Org (ustaw --url/--file lub zmienne EPG_SOURCE_URL / EPG_SOURCE_FILE).');
+  }
+
+  const sourceLabel = resolvedFile ?? finalUrl ?? DEFAULT_IPTV_URL;
+  logger.info(`📡 Rozpoczynam import EPG z ${sourceLabel}`);
+
+  const xml = resolvedFile
+    ? await loadFromFile(resolvedFile)
+    : await loadFromUrl(finalUrl!);
+
+  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
+  const parsed = parser.parse(xml);
+
+  if (!parsed?.tv) {
+    throw new Error('Niepoprawny format feedu IPTV-Org');
+  }
+
+  const channelNodes: IptvChannelNode[] = ensureArray(parsed.tv.channel ?? []);
+  const programmeNodes: IptvProgrammeNode[] = ensureArray(parsed.tv.programme ?? []);
+  logger.info(
+    `ℹ️  Wczytano ${channelNodes.length} kanałów i ${programmeNodes.length} programów z pliku XML.`,
+  );
+
+  const selectedChannels = buildSelectedChannelSet(
+    options.channelIds ?? envSelectedChannelIds,
+  );
+
+  const programmesByChannel = new Map<string, EpgProgram[]>();
+  let processedPrograms = 0;
+  const now = DateTime.utc();
+  const maxTime = now.plus({ days: MAX_PROGRAM_DAYS });
+
+  for (const programme of programmeNodes) {
+    const channelId = programme['@_channel'];
+    if (!channelId) continue;
+    if (!isChannelIdAllowed(channelId)) continue;
+    if (!isChannelSelectedById(selectedChannels, channelId)) continue;
+
+    const startTs = parseTimestamp(programme['@_start']);
+    if (!startTs) continue;
+
+    const start = DateTime.fromJSDate(startTs).toUTC();
+    if (start > maxTime) {
+      continue;
+    }
+
+    const endTs = programme['@_stop'] ? parseTimestamp(programme['@_stop']) : null;
+
+    const startIso =
+      start.toISO({ suppressMilliseconds: true }) ??
+      start.toUTC().toISO() ??
+      new Date().toISOString();
+    const endIso = endTs
+      ? DateTime.fromJSDate(endTs).toUTC().toISO({ suppressMilliseconds: true }) ?? undefined
+      : undefined;
+    const description = pickText(programme.desc);
+    const categories = ensureArray(programme.category)
+      .map(pickText)
+      .filter((tag): tag is string => Boolean(tag));
+
+    const program: EpgProgram = {
+      id: `${channelId}-${startIso}`,
+      title: pickText(programme.title) ?? 'Program',
+      start: startIso,
+      ...(description != null ? { description } : {}),
+      ...(endIso != null ? { end: endIso } : {}),
+      ...(categories.length > 0 ? { tags: categories } : {}),
+    };
+
+    const list = programmesByChannel.get(channelId) ?? [];
+    list.push(program);
+    programmesByChannel.set(channelId, list);
+    processedPrograms += 1;
+    if (processedPrograms % 10000 === 0) {
+      logger.info(
+        `  • Przetworzono ${processedPrograms} wpisów programów (ostatni kanał: ${channelId}).`,
+      );
+    }
+  }
+
+  const channels: EpgChannel[] = [];
+  let processedChannels = 0;
+  const verbose = options.verbose ?? false;
+  const logoMap = await loadLogoMap(logger);
+  const allowedSlugs = await loadAllowedChannelSlugs(logger);
+
+  for (const channel of channelNodes) {
+    if (!isChannelIdAllowed(channel['@_id'])) {
+      continue;
+    }
+    const programs = programmesByChannel.get(channel['@_id']);
+    if (!programs || programs.length === 0) {
+      continue;
+    }
+
+    programs.sort((a, b) => DateTime.fromISO(a.start).toMillis() - DateTime.fromISO(b.start).toMillis());
+
+    const name = pickText(channel['display-name']) ?? channel['@_id'];
+    const directLogo = pickIcon(channel.icon);
+    const enrichedLogo =
+      directLogo ??
+      findLogoForChannel(logoMap, channel['@_id'], name);
+
+    if (!isChannelWhitelisted(allowedSlugs, channel['@_id'], name)) {
+      if (verbose) {
+        logger.info(`  • Pomijam kanał ${name} (${channel['@_id']}) – poza listą polskich stacji.`);
+      }
+      continue;
+    }
+
+    const channelPayload: EpgChannel = {
+      id: channel['@_id'],
+      name,
+      programs,
+      ...(enrichedLogo ? { logo: enrichedLogo } : {}),
+    };
+
+    if (!isChannelSelected(selectedChannels, channel['@_id'], name)) {
+      continue;
+    }
+
+    channels.push(channelPayload);
+    processedChannels += 1;
+
+    if (verbose || processedChannels <= 10 || processedChannels % 20 === 0) {
+      logger.info(
+        `  • Kanał ${processedChannels}: ${channelPayload.name} (${programs.length} programów)`,
+      );
+    }
+  }
+
+  const limitedChannels = channels
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, Math.max(0, MAX_CHANNELS));
+
+  logger.info(`📊 Do importu wybrano ${limitedChannels.length} kanałów.`);
+
+  const feed: EpgFeed = {
+    generatedAt: new Date().toISOString(),
+    channels: limitedChannels,
+  };
+
+  const service = new EpgImportService(prisma, logger);
+  const result = await service.importFeed(feed);
+  logger.info(`✅ Zaimportowano ${result.channelCount} kanałów i ${result.programCount} audycji.`);
+  return result;
+}
+
+export async function pruneDisallowedChannels(
+  prisma: PrismaClient,
+  logger: FastifyBaseLogger,
+) {
+  if (allowAllChannels) {
+    logger.info('Prune skipped — wszystkie prefiksy są dozwolone.');
+    return { removed: 0 };
+  }
+
+  logger.info(
+    `🔍 Sprawdzam kanały w bazie. Do zachowania prefiksy: ${allowedPrefixes.join(', ')}`,
+  );
+
+  const channels = await prisma.channel.findMany({
+    select: { id: true, externalId: true, name: true },
+  });
+  const allowedSlugs = await loadAllowedChannelSlugs(logger);
+
+  const removable = channels.filter((channel) => {
+    const idAllowed = isChannelIdAllowed(channel.externalId);
+    const whitelistAllowed = isChannelWhitelisted(
+      allowedSlugs,
+      channel.externalId ?? undefined,
+      channel.name ?? undefined,
+    );
+    return !idAllowed || !whitelistAllowed;
+  });
+
+  if (removable.length === 0) {
+    logger.info('✅ Wszystkie kanały w bazie spełniają kryteria.');
+    return { removed: 0 };
+  }
+
+  logger.warn(
+    `🧹 Usuwam ${removable.length} kanałów spoza dozwolonych prefiksów. Przykłady: ${removable
+      .slice(0, 5)
+      .map((channel) => channel.externalId ?? channel.name)
+      .join(', ')}`,
+  );
+
+  const idsToRemove = removable.map((channel) => channel.id);
+  const deleteResult = await prisma.channel.deleteMany({ where: { id: { in: idsToRemove } } });
+
+  logger.info(
+    `🗑️  Usunięto ${deleteResult.count} kanałów (powiązane programy usunięto kaskadowo).`,
+  );
+
+  return { removed: deleteResult.count };
+}
+
+async function loadFromUrl(url: string) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Nie udało się pobrać feedu (status ${response.status})`);
+  }
+
+  return response.text();
+}
+
+async function loadFromFile(filePath: string) {
+  return readFile(filePath, 'utf-8');
+}
+
+function resolvePathMaybe(pathValue: string | null | undefined) {
+  if (!pathValue) return null;
+  return isAbsolute(pathValue) ? pathValue : resolve(process.cwd(), pathValue);
+}
+
+function ensureArray<T>(value: T | T[] | undefined): T[] {
+  if (value == null) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function parseSelectedChannelIds(raw: string | undefined): string[] {
+  if (!raw) {
+    return [];
+  }
+  return raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
+function buildSelectedChannelSet(ids: readonly string[]): SelectedChannelSet {
+  if (!ids || ids.length === 0) {
+    return { isEmpty: true, rawIds: new Set(), slugIds: new Set() };
+  }
+
+  const rawIds = new Set<string>();
+  const slugIds = new Set<string>();
+
+  for (const id of ids) {
+    const normalized = normalizeChannelIdentifier(id);
+    if (normalized) {
+      rawIds.add(normalized);
+      addSlugVariants(slugIds, normalized.split('#').pop() ?? normalized);
+    }
+    addSlugVariants(slugIds, id);
+  }
+
+  return { isEmpty: false, rawIds, slugIds };
+}
+
+function normalizeChannelIdentifier(value: string | null | undefined) {
+  return value ? value.trim().toLowerCase() : '';
+}
+
+function addSlugVariants(target: Set<string>, value: string | null | undefined) {
+  if (!value) {
+    return;
+  }
+  const raw = value.trim();
+  if (!raw) {
+    return;
+  }
+
+  const candidates = new Set<string>();
+  candidates.add(slugify(raw));
+
+  const afterSlash = raw.split('/').pop();
+  if (afterSlash) {
+    candidates.add(slugify(afterSlash));
+  }
+
+  const afterHash = raw.split('#').pop();
+  if (afterHash) {
+    candidates.add(slugify(afterHash));
+  }
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+    target.add(candidate);
+    target.add(ensureSuffix(candidate, 'pl'));
+  }
+}
+
+function isChannelSelectedById(set: SelectedChannelSet, channelId: string | null | undefined) {
+  if (set.isEmpty) {
+    return true;
+  }
+  const normalized = normalizeChannelIdentifier(channelId);
+  if (!normalized) {
+    return false;
+  }
+
+  if (set.rawIds.has(normalized)) {
+    return true;
+  }
+
+  const slug = slugify(normalized.split('#').pop() ?? normalized);
+  if (!slug) {
+    return false;
+  }
+
+  if (set.slugIds.has(slug) || set.slugIds.has(ensureSuffix(slug, 'pl'))) {
+    return true;
+  }
+
+  return false;
+}
+
+function isChannelSelected(
+  set: SelectedChannelSet,
+  channelId: string | undefined,
+  channelName: string | undefined,
+) {
+  if (set.isEmpty) {
+    return true;
+  }
+
+  if (isChannelSelectedById(set, channelId)) {
+    return true;
+  }
+
+  if (channelName) {
+    const slug = slugify(channelName);
+    if (slug && (set.slugIds.has(slug) || set.slugIds.has(ensureSuffix(slug, 'pl')))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function pickText(node: unknown): string | undefined {
+  if (node == null) return undefined;
+  if (typeof node === 'string') return node;
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const value = pickText(item);
+      if (value) return value;
+    }
+    return undefined;
+  }
+  if (typeof node === 'object' && '#text' in (node as Record<string, unknown>)) {
+    const text = (node as Record<string, unknown>)['#text'];
+    return typeof text === 'string' ? text : undefined;
+  }
+  return undefined;
+}
+
+function pickIcon(icon: unknown): string | undefined {
+  const candidates = ensureArray(icon as Array<{ '@_src': string }> | undefined);
+  for (const item of candidates) {
+    if (item && typeof item === 'object' && '@_src' in item) {
+      const src = (item as { '@_src': string })['@_src'];
+      if (src) return src;
+    }
+  }
+  return undefined;
+}
+
+function parseTimestamp(raw: string | undefined): Date | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+
+  let dt = DateTime.fromFormat(trimmed, 'yyyyLLddHHmmss ZZZ', {
+    setZone: true,
+  });
+  if (!dt.isValid) {
+    const withoutOffset = trimmed.split(' ')[0] ?? trimmed;
+    dt = DateTime.fromFormat(withoutOffset, 'yyyyLLddHHmmss', { zone: 'UTC' });
+  }
+  return dt.isValid ? dt.toUTC().toJSDate() : null;
+}
+
+type LogoEntry = {
+  channel?: string;
+  url?: string;
+  tags?: string[];
+};
+
+let logoMapPromise: Promise<Map<string, string>> | null = null;
+let logoMapCache: Map<string, string> | null = null;
+
+type ChannelEntry = {
+  id?: string;
+  name?: string;
+  alt_names?: string[];
+  country?: string;
+};
+
+let allowedChannelSlugsPromise: Promise<Set<string>> | null = null;
+let allowedChannelSlugsCache: Set<string> | null = null;
+
+async function loadLogoMap(logger: FastifyBaseLogger) {
+  if (logoMapCache) {
+    return logoMapCache;
+  }
+  if (logoMapPromise) {
+    return logoMapPromise;
+  }
+
+  logoMapPromise = (async () => {
+    const configuredPath =
+      process.env.EPG_LOGO_DATA_FILE ?? env.EPG_LOGO_DATA_FILE ?? DEFAULT_LOGO_DATA_PATH;
+    const resolvedPath = resolvePathMaybe(configuredPath);
+    if (!resolvedPath) {
+      logger.warn('Nie skonfigurowano ścieżki do logotypów (EPG_LOGO_DATA_FILE).');
+      return new Map<string, string>();
+    }
+
+    try {
+      const raw = await readFile(resolvedPath, 'utf-8');
+      const entries = JSON.parse(raw) as LogoEntry[];
+      const grouped = new Map<string, LogoEntry[]>();
+      for (const entry of entries) {
+        if (!entry?.channel || typeof entry.url !== 'string' || entry.url.length === 0) {
+          continue;
+        }
+        const key = slugify(entry.channel);
+        if (!key) continue;
+        const bucket = grouped.get(key) ?? [];
+        bucket.push(entry);
+        grouped.set(key, bucket);
+      }
+
+      const map = new Map<string, string>();
+      for (const [key, list] of grouped) {
+        const preferred =
+          list.find((item) => !(item.tags ?? []).includes('picons')) ?? list[0];
+        if (preferred?.url) {
+          map.set(key, preferred.url);
+        }
+      }
+
+      logoMapCache = map;
+      return map;
+    } catch (error) {
+      logger.warn(
+        { err: error, path: resolvedPath },
+        'Nie udało się wczytać pliku z logotypami kanałów.',
+      );
+      return new Map<string, string>();
+    }
+  })();
+
+  const result = await logoMapPromise;
+  logoMapCache = result;
+  return result;
+}
+
+async function loadAllowedChannelSlugs(logger: FastifyBaseLogger) {
+  if (allowedChannelSlugsCache) {
+    return allowedChannelSlugsCache;
+  }
+  if (allowedChannelSlugsPromise) {
+    return allowedChannelSlugsPromise;
+  }
+
+  allowedChannelSlugsPromise = (async () => {
+    const configuredPath =
+      process.env.EPG_CHANNEL_DATA_FILE ?? env.EPG_CHANNEL_DATA_FILE ?? DEFAULT_CHANNEL_DATA_PATH;
+    const resolvedPath = resolvePathMaybe(configuredPath);
+    if (!resolvedPath) {
+      logger.warn('Nie skonfigurowano pliku kanałów (EPG_CHANNEL_DATA_FILE).');
+      return new Set<string>();
+    }
+
+    try {
+      const raw = await readFile(resolvedPath, 'utf-8');
+      const entries = JSON.parse(raw) as ChannelEntry[];
+      const slugs = new Set<string>();
+      for (const entry of entries) {
+        if (!entry || entry.country !== 'PL') {
+          continue;
+        }
+        const names = new Set<string>();
+        if (entry.name) names.add(entry.name);
+        if (entry.id) names.add(entry.id);
+        for (const alt of entry.alt_names ?? []) {
+          if (alt) names.add(alt);
+        }
+        for (const value of names) {
+          const slug = slugify(value);
+          if (!slug) continue;
+          slugs.add(slug);
+          slugs.add(ensureSuffix(slug, 'pl'));
+        }
+      }
+      allowedChannelSlugsCache = slugs;
+      return slugs;
+    } catch (error) {
+      logger.warn(
+        { err: error, path: resolvedPath },
+        'Nie udało się wczytać pliku kanałów (channels.json).',
+      );
+      return new Set<string>();
+    }
+  })();
+
+  const result = await allowedChannelSlugsPromise;
+  allowedChannelSlugsCache = result;
+  return result;
+}
+
+function findLogoForChannel(
+  map: Map<string, string>,
+  channelId: string,
+  channelName: string | undefined,
+) {
+  const candidates = new Set<string>();
+
+  const idSlug = slugify(channelId.split('#')[1] ?? channelId);
+  if (idSlug) {
+    candidates.add(idSlug);
+    candidates.add(ensureSuffix(idSlug, 'pl'));
+  }
+
+  const nameSlug = slugify(channelName ?? '');
+  if (nameSlug) {
+    candidates.add(nameSlug);
+    candidates.add(ensureSuffix(nameSlug, 'pl'));
+  }
+
+  for (const slug of candidates) {
+    const candidate = map.get(slug);
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function isChannelWhitelisted(
+  allowedSlugs: Set<string>,
+  channelId: string | undefined,
+  channelName: string | undefined,
+) {
+  if (allowedSlugs.size === 0) {
+    return true;
+  }
+
+  const candidates = new Set<string>();
+  if (channelId) {
+    const idPart = channelId.split('#').pop() ?? channelId;
+    const slug = slugify(idPart);
+    if (slug) {
+      candidates.add(slug);
+      candidates.add(ensureSuffix(slug, 'pl'));
+    }
+  }
+
+  if (channelName) {
+    const slug = slugify(channelName);
+    if (slug) {
+      candidates.add(slug);
+      candidates.add(ensureSuffix(slug, 'pl'));
+    }
+  }
+
+  for (const slug of candidates) {
+    if (slug && allowedSlugs.has(slug)) {
+      return true;
+    }
+  }
+
+  for (const slug of candidates) {
+    if (FALLBACK_ALLOWED_KEYWORDS.some((keyword) => slug.includes(keyword))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function slugify(input: string) {
+  return input.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function ensureSuffix(slug: string, suffix: string) {
+  if (!slug) return slug;
+  return slug.endsWith(suffix) ? slug : `${slug}${suffix}`;
+}
+
+const FALLBACK_ALLOWED_KEYWORDS = [
+  'tvp',
+  'tvn',
+  'polsat',
+  'canal',
+  'puls',
+  'fokus',
+  'player',
+  'eleven',
+  'hbo',
+  'canalplus',
+  '4fun',
+  'trwam',
+  'eska',
+  'discovery',
+  'animalplanet',
+  'nationalgeographic',
+  'bbc',
+  'history',
+  'cinemax',
+  'fox',
+  'cartoonnetwork',
+  'mini',
+  'nickelodeon',
+  'nickjr',
+];
