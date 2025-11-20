@@ -234,9 +234,21 @@ export async function importIptvOrgEpg(
   };
 
   const service = new EpgImportService(prisma, logger);
-  const result = await service.importFeed(feed);
-  logger.info(`✅ Zaimportowano ${result.channelCount} kanałów i ${result.programCount} audycji.`);
-  return result;
+  try {
+    const result = await service.importFeed(feed);
+    logger.info(`✅ Zaimportowano ${result.channelCount} kanałów i ${result.programCount} audycji.`);
+    return result;
+  } catch (error) {
+    logger.error(
+      { 
+        error, 
+        channelCount: feed.channels.length,
+        totalPrograms: feed.channels.reduce((sum, ch) => sum + (ch.programs?.length ?? 0), 0)
+      },
+      'Failed to import EPG feed to database',
+    );
+    throw error;
+  }
 }
 
 export async function pruneDisallowedChannels(
@@ -290,7 +302,10 @@ export async function pruneDisallowedChannels(
 }
 
 async function loadFromUrl(url: string) {
-  const response = await fetch(url);
+  const response = await fetch(url, {
+    // Zwiększ timeout dla dużych plików XML (5 minut)
+    signal: AbortSignal.timeout(5 * 60 * 1000),
+  });
   if (!response.ok) {
     throw new Error(`Nie udało się pobrać feedu (status ${response.status})`);
   }
