@@ -151,8 +151,22 @@ export class EpgImportService {
         }
 
         if (operations.length > 0) {
-          await this.prisma.$transaction(operations);
-          programCount += validProgramsInChunk;
+          try {
+            await this.prisma.$transaction(operations);
+            programCount += validProgramsInChunk;
+          } catch (error) {
+            this.logger.error(
+              { 
+                error, 
+                channelName: channel.name, 
+                chunkSize: operations.length,
+                validProgramsInChunk 
+              },
+              'Failed to save program chunk to database',
+            );
+            // Kontynuuj z następnym chunkiem zamiast przerywać cały import
+            throw error;
+          }
         }
 
         if (programCount % 1000 === 0) {
