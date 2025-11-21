@@ -68,7 +68,15 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
         await runSelectedImport(app);
         app.log.info('Initial EPG import finished successfully.');
       } catch (error) {
-        app.log.error(error, 'Initial EPG import failed');
+        app.log.error(
+          {
+            error,
+            errorMessage: error instanceof Error ? error.message : String(error),
+            errorStack: error instanceof Error ? error.stack : undefined,
+            errorName: error instanceof Error ? error.name : undefined,
+          },
+          'Initial EPG import failed',
+        );
       }
     });
   }

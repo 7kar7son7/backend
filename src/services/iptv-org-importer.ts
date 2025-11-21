@@ -97,14 +97,52 @@ export async function importIptvOrgEpg(
   const sourceLabel = resolvedFile ?? finalUrl ?? DEFAULT_IPTV_URL;
   logger.info(`📡 Rozpoczynam import EPG z ${sourceLabel}`);
 
-  const xml = resolvedFile
-    ? await loadFromFile(resolvedFile)
-    : await loadFromUrl(finalUrl!);
+  let xml: string;
+  try {
+    xml = resolvedFile
+      ? await loadFromFile(resolvedFile)
+      : await loadFromUrl(finalUrl!);
+    logger.info(`✅ Pobrano XML (${xml.length} znaków)`);
+  } catch (error) {
+    logger.error(
+      {
+        error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        source: sourceLabel,
+      },
+      'Failed to load EPG XML from source',
+    );
+    throw error;
+  }
 
-  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
-  const parsed = parser.parse(xml);
+  let parsed: any;
+  try {
+    const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
+    parsed = parser.parse(xml);
+    logger.info('✅ XML został sparsowany');
+  } catch (error) {
+    logger.error(
+      {
+        error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        xmlLength: xml.length,
+        xmlPreview: xml.substring(0, 500),
+      },
+      'Failed to parse EPG XML',
+    );
+    throw error;
+  }
 
   if (!parsed?.tv) {
+    logger.error(
+      {
+        parsedKeys: Object.keys(parsed || {}),
+        parsedPreview: JSON.stringify(parsed).substring(0, 500),
+      },
+      'Invalid EPG feed format - missing tv element',
+    );
     throw new Error('Niepoprawny format feedu IPTV-Org');
   }
 
@@ -308,15 +346,26 @@ export async function pruneDisallowedChannels(
 }
 
 async function loadFromUrl(url: string) {
-  const response = await fetch(url, {
-    // Zwiększ timeout dla dużych plików XML (5 minut)
-    signal: AbortSignal.timeout(5 * 60 * 1000),
-  });
-  if (!response.ok) {
-    throw new Error(`Nie udało się pobrać feedu (status ${response.status})`);
-  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 minut timeout
+  
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      throw new Error(`Nie udało się pobrać feedu (status ${response.status} ${response.statusText})`);
+    }
 
-  return response.text();
+    const text = await response.text();
+    return text;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Timeout podczas pobierania feedu EPG z ${url} (przekroczono 5 minut)`);
+    }
+    throw error;
+  }
 }
 
 async function loadFromFile(filePath: string) {
