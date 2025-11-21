@@ -160,12 +160,14 @@ export class EpgImportService {
                 error, 
                 channelName: channel.name, 
                 chunkSize: operations.length,
-                validProgramsInChunk 
+                validProgramsInChunk,
+                errorMessage: error instanceof Error ? error.message : String(error),
+                errorStack: error instanceof Error ? error.stack : undefined
               },
               'Failed to save program chunk to database',
             );
             // Kontynuuj z następnym chunkiem zamiast przerywać cały import
-            throw error;
+            // Nie rzucamy błędu, żeby import mógł kontynuować z innymi kanałami
           }
         }
 

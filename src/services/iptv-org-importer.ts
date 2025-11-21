@@ -235,6 +235,10 @@ export async function importIptvOrgEpg(
 
   const service = new EpgImportService(prisma, logger);
   try {
+    const totalPrograms = feed.channels.reduce((sum, ch) => sum + (ch.programs?.length ?? 0), 0);
+    logger.info(
+      `📦 Przygotowano ${feed.channels.length} kanałów z łącznie ${totalPrograms} programami do importu.`,
+    );
     const result = await service.importFeed(feed);
     logger.info(`✅ Zaimportowano ${result.channelCount} kanałów i ${result.programCount} audycji.`);
     return result;
@@ -243,7 +247,9 @@ export async function importIptvOrgEpg(
       { 
         error, 
         channelCount: feed.channels.length,
-        totalPrograms: feed.channels.reduce((sum, ch) => sum + (ch.programs?.length ?? 0), 0)
+        totalPrograms: feed.channels.reduce((sum, ch) => sum + (ch.programs?.length ?? 0), 0),
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined
       },
       'Failed to import EPG feed to database',
     );
