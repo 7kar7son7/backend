@@ -39,6 +39,8 @@ export class EpgImportService {
   ) {}
 
   async importFeed(feed: EpgFeed) {
+    this.logger.info(`🚀 Rozpoczynam import feedu EPG (${feed.channels.length} kanałów)`);
+    
     let channelCount = 0;
     let programCount = 0;
 
@@ -81,8 +83,11 @@ export class EpgImportService {
       }
 
       if (!channel.programs || channel.programs.length === 0) {
+        this.logger.debug(`Kanał ${channel.name} nie ma programów, pomijam`);
         continue;
       }
+      
+      this.logger.debug(`Przetwarzam ${channel.programs.length} programów dla kanału ${channel.name}`);
 
       const programChunks = chunkArray(channel.programs, chunkSize);
 
@@ -91,6 +96,15 @@ export class EpgImportService {
         let validProgramsInChunk = 0;
 
         for (const program of programChunk) {
+          // Walidacja podstawowych danych
+          if (!program.id || !program.title || !program.start) {
+            this.logger.warn(
+              { programId: program.id, hasTitle: !!program.title, hasStart: !!program.start },
+              'Skipping program with missing required fields',
+            );
+            continue;
+          }
+
           const startsAt = new Date(program.start);
           if (Number.isNaN(startsAt.getTime())) {
             this.logger.warn(
@@ -109,7 +123,15 @@ export class EpgImportService {
             continue;
           }
 
+          // Walidacja, że end jest po start
           const endsAtFinal = endsAt ?? new Date(startsAt.getTime() + 60 * 60 * 1000);
+          if (endsAtFinal.getTime() <= startsAt.getTime()) {
+            this.logger.warn(
+              { programId: program.id, start: program.start, end: program.end },
+              'Skipping program with end date before or equal to start date',
+            );
+            continue;
+          }
 
           const createData: Prisma.ProgramCreateInput = {
             externalId: program.id,
@@ -181,6 +203,8 @@ export class EpgImportService {
       );
     }
 
+    this.logger.info(`✅ Import feedu EPG zakończony: ${channelCount} kanałów, ${programCount} programów`);
+    
     return {
       channelCount,
       programCount,

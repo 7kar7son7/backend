@@ -124,7 +124,5 @@ async function runSelectedImport(app: FastifyInstance) {
     return;
   }
 
-  app.log.warn(
-    'Pominięto import EPG: brak konfiguracji źródła (EPG_SOURCE_URL / EPG_SOURCE_FILE).',
-  );
+  throw new Error('Brak konfiguracji źródła EPG (EPG_SOURCE_URL / EPG_SOURCE_FILE).');
 }

@@ -158,20 +158,36 @@ export async function importIptvOrgEpg(
 
   const programmesByChannel = new Map<string, EpgProgram[]>();
   let processedPrograms = 0;
+  let skippedPrograms = 0;
   const now = DateTime.utc();
   const maxTime = now.plus({ days: MAX_PROGRAM_DAYS });
 
+  logger.info(`🔄 Przetwarzam ${programmeNodes.length} programów z XML...`);
+
   for (const programme of programmeNodes) {
     const channelId = programme['@_channel'];
-    if (!channelId) continue;
-    if (!isChannelIdAllowed(channelId)) continue;
-    if (!isChannelSelectedById(selectedChannels, channelId)) continue;
+    if (!channelId) {
+      skippedPrograms += 1;
+      continue;
+    }
+    if (!isChannelIdAllowed(channelId)) {
+      skippedPrograms += 1;
+      continue;
+    }
+    if (!isChannelSelectedById(selectedChannels, channelId)) {
+      skippedPrograms += 1;
+      continue;
+    }
 
     const startTs = parseTimestamp(programme['@_start']);
-    if (!startTs) continue;
+    if (!startTs) {
+      skippedPrograms += 1;
+      continue;
+    }
 
     const start = DateTime.fromJSDate(startTs).toUTC();
     if (start > maxTime) {
+      skippedPrograms += 1;
       continue;
     }
 
@@ -208,10 +224,16 @@ export async function importIptvOrgEpg(
       );
     }
   }
+  
+  logger.info(
+    `✅ Przetworzono ${processedPrograms} programów, pominięto ${skippedPrograms} (łącznie ${programmeNodes.length} w XML).`,
+  );
 
   const channels: EpgChannel[] = [];
   let processedChannels = 0;
   const verbose = options.verbose ?? false;
+  
+  logger.info(`🔄 Przetwarzam ${channelNodes.length} kanałów z XML...`);
   const logoMap = await loadLogoMap(logger);
   const allowedSlugs = await loadAllowedChannelSlugs(logger);
 
@@ -277,17 +299,23 @@ export async function importIptvOrgEpg(
     logger.info(
       `📦 Przygotowano ${feed.channels.length} kanałów z łącznie ${totalPrograms} programami do importu.`,
     );
+    
+    logger.info('🔄 Rozpoczynam zapis do bazy danych...');
     const result = await service.importFeed(feed);
     logger.info(`✅ Zaimportowano ${result.channelCount} kanałów i ${result.programCount} audycji.`);
     return result;
   } catch (error) {
+    const totalPrograms = feed.channels.reduce((sum, ch) => sum + (ch.programs?.length ?? 0), 0);
     logger.error(
       { 
         error, 
         channelCount: feed.channels.length,
-        totalPrograms: feed.channels.reduce((sum, ch) => sum + (ch.programs?.length ?? 0), 0),
+        totalPrograms,
         errorMessage: error instanceof Error ? error.message : String(error),
-        errorStack: error instanceof Error ? error.stack : undefined
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorName: error instanceof Error ? error.name : undefined,
+        firstChannelName: feed.channels[0]?.name,
+        firstChannelPrograms: feed.channels[0]?.programs?.length ?? 0,
       },
       'Failed to import EPG feed to database',
     );
