@@ -30,6 +30,13 @@ export default async function programsRoutes(app: FastifyInstance) {
       );
       const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
 
+      app.log.info({
+        selectedDate: selectedDate.toISOString(),
+        startOfDay: startOfDay.toISOString(),
+        endOfDay: endOfDay.toISOString(),
+        queryDate: query.date?.toISOString(),
+      }, 'Fetching programs for day');
+
       const programs = await app.prisma.program.findMany({
         where: {
           OR: [
@@ -57,10 +64,16 @@ export default async function programsRoutes(app: FastifyInstance) {
         },
       });
 
+      app.log.info({
+        totalPrograms: programs.length,
+        programsWithChannels: programs.filter((p) => p.channel != null).length,
+        dateRange: { start: startOfDay.toISOString(), end: endOfDay.toISOString() },
+      }, 'Found programs for day');
+
+      const filteredPrograms = programs.filter((program) => program.channel != null);
+      
       return {
-        data: programs
-          .filter((program) => program.channel != null)
-          .map((program) => ({
+        data: filteredPrograms.map((program) => ({
             id: program.id,
             title: program.title,
             channelId: program.channelId,
