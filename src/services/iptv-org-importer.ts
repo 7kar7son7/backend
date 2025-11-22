@@ -9,7 +9,8 @@ import { isAbsolute, resolve } from 'node:path';
 import { env } from '../config/env';
 import { EpgImportService, type EpgChannel, type EpgFeed, type EpgProgram } from './epg-import.service';
 
-const DEFAULT_IPTV_URL = 'https://iptv-org.github.io/epg/guides/pl/pl.xml';
+// Używamy epg.ovh - aktualizowane codziennie, polskie EPG
+const DEFAULT_IPTV_URL = 'https://epg.ovh/pl.xml';
 const DEFAULT_LOGO_DATA_PATH = '../epg-source/temp/data/logos.json';
 const DEFAULT_CHANNEL_DATA_PATH = '../epg-source/temp/data/channels.json';
 
@@ -190,9 +191,18 @@ export async function importIptvOrgEpg(
     }
 
     const start = DateTime.fromJSDate(startTs).toUTC();
+    // Filtruj tylko programy z przyszłości (nie odrzucaj programów z przeszłości - mogą być jeszcze aktualne)
+    // Ale odrzuć programy zbyt daleko w przyszłości
     if (start > maxTime) {
       skippedPrograms += 1;
       continue;
+    }
+    
+    // Loguj programy z dzisiaj dla debugowania
+    const today = DateTime.utc().startOf('day');
+    const programDay = start.startOf('day');
+    if (programDay.equals(today)) {
+      logger.debug(`Program z dzisiaj: ${programme['@_channel']} - ${pickText(programme.title)} - ${start.toISO()}`);
     }
 
     const endTs = programme['@_stop'] ? parseTimestamp(programme['@_stop']) : null;
