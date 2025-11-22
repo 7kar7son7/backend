@@ -384,8 +384,12 @@ async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
   try {
     logger.info(`🌐 Wysyłam żądanie HTTP GET do: ${url}`);
     
-    // Sprawdź czy fetch jest dostępny
-    if (typeof fetch === 'undefined') {
+    // Sprawdź czy fetch jest dostępny (undici lub natywny)
+    let fetchFn: typeof fetch;
+    if (typeof fetch !== 'undefined') {
+      fetchFn = fetch;
+      logger.debug('Używam dostępnego fetch (undici lub natywny)');
+    } else {
       throw new Error('fetch is not available in this environment');
     }
     
@@ -397,11 +401,14 @@ async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
       },
     };
     
-    logger.debug({ url, options: fetchOptions }, 'Fetch options');
-    const response = await fetch(url, fetchOptions);
+    logger.debug({ url, hasSignal: !!controller.signal, headers: fetchOptions.headers }, 'Fetch options');
+    
+    const startTime = Date.now();
+    const response = await fetchFn(url, fetchOptions);
+    const duration = Date.now() - startTime;
     clearTimeout(timeoutId);
     
-    logger.info(`📡 Otrzymano odpowiedź: status ${response.status} ${response.statusText}, headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()))}`);
+    logger.info(`📡 Otrzymano odpowiedź po ${duration}ms: status ${response.status} ${response.statusText}`);
     
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Nie udało się odczytać treści odpowiedzi');
