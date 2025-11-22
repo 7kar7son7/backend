@@ -99,9 +99,10 @@ export async function importIptvOrgEpg(
 
   let xml: string;
   try {
+    logger.info(`📥 Próbuję pobrać XML z: ${finalUrl ?? resolvedFile}`);
     xml = resolvedFile
       ? await loadFromFile(resolvedFile)
-      : await loadFromUrl(finalUrl!);
+      : await loadFromUrl(finalUrl!, logger);
     logger.info(`✅ Pobrano XML (${xml.length} znaków)`);
   } catch (error) {
     logger.error(
@@ -109,7 +110,10 @@ export async function importIptvOrgEpg(
         error,
         errorMessage: error instanceof Error ? error.message : String(error),
         errorStack: error instanceof Error ? error.stack : undefined,
+        errorName: error instanceof Error ? error.name : undefined,
         source: sourceLabel,
+        url: finalUrl,
+        file: resolvedFile,
       },
       'Failed to load EPG XML from source',
     );
@@ -373,25 +377,51 @@ export async function pruneDisallowedChannels(
   return { removed: deleteResult.count };
 }
 
-async function loadFromUrl(url: string) {
+async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 minut timeout
   
   try {
+    logger.info(`🌐 Wysyłam żądanie HTTP GET do: ${url}`);
     const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
     
+    logger.info(`📡 Otrzymano odpowiedź: status ${response.status} ${response.statusText}`);
+    
     if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Nie udało się odczytać treści odpowiedzi');
+      logger.error(
+        {
+          status: response.status,
+          statusText: response.statusText,
+          url,
+          errorBody: errorText.substring(0, 500),
+        },
+        'HTTP request failed',
+      );
       throw new Error(`Nie udało się pobrać feedu (status ${response.status} ${response.statusText})`);
     }
 
+    logger.info('📥 Pobieram treść odpowiedzi...');
     const text = await response.text();
+    logger.info(`✅ Pobrano treść (${text.length} znaków)`);
     return text;
   } catch (error) {
     clearTimeout(timeoutId);
     if (error instanceof Error && error.name === 'AbortError') {
+      logger.error({ url, timeout: '5 minutes' }, 'Timeout podczas pobierania feedu EPG');
       throw new Error(`Timeout podczas pobierania feedu EPG z ${url} (przekroczono 5 minut)`);
     }
+    logger.error(
+      {
+        error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorName: error instanceof Error ? error.name : undefined,
+        url,
+      },
+      'Error during EPG feed download',
+    );
     throw error;
   }
 }
