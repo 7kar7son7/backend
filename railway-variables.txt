@@ -6,6 +6,7 @@ DATABASE_URL=postgresql://admin:changeme_secure_password@57.129.12.11:5432/branc
 NODE_ENV=production
 PORT=3001
 HOST=0.0.0.0
+NODE_OPTIONS=--max-old-space-size=2048
 EPG_SOURCE_URL=https://epg.ovh/pl.xml
 EPG_GRAB_ENABLED=false
 IPTV_ORG_MAX_CHANNELS=10000
@@ -16,7 +17,9 @@ EPG_AUTO_IMPORT_ENABLED=true
 EPG_AUTO_IMPORT_SCHEDULE=0 3 * * *
 EPG_AUTO_IMPORT_TIMEZONE=Europe/Warsaw
 EPG_AUTO_IMPORT_RUN_ON_START=true
-IPTV_ORG_SELECTED_IDS=pl/tvp1,pl/tvp2,pl/tvpinfo,pl/tvpsport,pl/tvpseriale,pl/tvn,pl/tvn24,pl/tvn7,pl/tvnstyl,pl/polsat,pl/polsatnews,pl/polsatsport,pl/tv4,pl/tvpuls,pl/tvphistoria,pl/ttv,pl/canalplus,pl/canalplusfilm,pl/canalplussport,pl/eleven1,pl/eleven2,pl/discoverychannel,pl/discoverylife,pl/nationalgeographic,pl/animalplanet,pl/bbcbrit,pl/bbcearth,pl/hbo,pl/hbo2,pl/hbo3,pl/cinemax,pl/axn,pl/minimini,pl/disneychannel,pl/nickelodeon,pl/cartoonnetwork,pl/eskatv,pl/4fundance,pl/fokustv
+# IPTV_ORG_SELECTED_IDS - PUSTE = importuje wszystkie polskie kanały (z prefiksem pl/)
+# Jeśli chcesz tylko wybrane kanały, ustaw tutaj listę oddzieloną przecinkami
+# IPTV_ORG_SELECTED_IDS=
 DAILY_REMINDER_SCHEDULE=0 11 * * *
 JWT_SECRET=replace-with-secure-secret
 FCM_SERVER_KEY=replace-with-fcm-server-key

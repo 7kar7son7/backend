@@ -22,6 +22,6 @@ RUN npx prisma generate
 # Usuń dev dependencies (opcjonalne, oszczędza miejsce)
 RUN npm prune --production
 
-# Uruchom migracje i start
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
+# Uruchom migracje i start z większym limitem pamięci dla dużych plików EPG
+CMD ["sh", "-c", "npx prisma migrate deploy && node --max-old-space-size=2048 dist/server.js"]
 

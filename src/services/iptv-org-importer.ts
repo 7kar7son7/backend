@@ -9,8 +9,14 @@ import { isAbsolute, resolve } from 'node:path';
 import { env } from '../config/env';
 import { EpgImportService, type EpgChannel, type EpgFeed, type EpgProgram } from './epg-import.service';
 
-// Używamy epg.ovh - aktualizowane codziennie, polskie EPG
-const DEFAULT_IPTV_URL = 'https://epg.ovh/pl.xml';
+// Lista źródeł EPG z priorytetem - pierwsze działające będzie użyte
+const EPG_SOURCES = [
+  'https://epg.ovh/pl.xml', // Aktualizowane codziennie, polskie EPG
+  'https://epg.best/epg.xml.gz', // Alternatywne źródło
+  'https://iptv-org.github.io/epg/guides/pl/pl.xml', // GitHub (może być nieaktualne)
+] as const;
+
+const DEFAULT_IPTV_URL = EPG_SOURCES[0];
 const DEFAULT_LOGO_DATA_PATH = '../epg-source/temp/data/logos.json';
 const DEFAULT_CHANNEL_DATA_PATH = '../epg-source/temp/data/channels.json';
 
@@ -100,11 +106,18 @@ export async function importIptvOrgEpg(
 
   let xml: string;
   try {
-    logger.info(`📥 Próbuję pobrać XML z: ${finalUrl ?? resolvedFile}`);
-    xml = resolvedFile
-      ? await loadFromFile(resolvedFile)
-      : await loadFromUrl(finalUrl!, logger);
-    logger.info(`✅ Pobrano XML (${xml.length} znaków)`);
+    if (resolvedFile) {
+      logger.info(`📥 Próbuję pobrać XML z pliku: ${resolvedFile}`);
+      xml = await loadFromFile(resolvedFile);
+      logger.info(`✅ Pobrano XML z pliku (${xml.length} znaków)`);
+    } else if (finalUrl) {
+      // Jeśli użyto domyślnego URL, spróbuj wszystkich źródeł jako fallback
+      const urlsToTry = finalUrl === DEFAULT_IPTV_URL ? EPG_SOURCES : [finalUrl];
+      xml = await loadFromUrlWithFallback(urlsToTry, logger);
+      logger.info(`✅ Pobrano XML (${xml.length} znaków)`);
+    } else {
+      throw new Error('Brak źródła feedu - ani plik, ani URL');
+    }
   } catch (error) {
     logger.error(
       {
@@ -123,7 +136,14 @@ export async function importIptvOrgEpg(
 
   let parsed: any;
   try {
-    const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
+    logger.info('🔄 Parsuję XML (może to chwilę potrwać dla dużych plików)...');
+    // Użyj opcji optymalizujących dla dużych plików
+    const parser = new XMLParser({ 
+      ignoreAttributes: false, 
+      attributeNamePrefix: '@_',
+      parseAttributeValue: false, // Nie parsuj wartości atrybutów - oszczędza pamięć
+      trimValues: true,
+    });
     parsed = parser.parse(xml);
     logger.info('✅ XML został sparsowany');
   } catch (error) {
@@ -160,14 +180,31 @@ export async function importIptvOrgEpg(
   const selectedChannels = buildSelectedChannelSet(
     options.channelIds ?? envSelectedChannelIds,
   );
+  
+  // Loguj informacje o filtrach
+  logger.info(`🔍 Filtry kanałów:`);
+  logger.info(`  • Prefiksy dozwolone: ${allowedPrefixes.length > 0 ? allowedPrefixes.join(', ') : 'wszystkie'}`);
+  logger.info(`  • Wybrane kanały: ${selectedChannels.isEmpty ? 'wszystkie z prefiksem' : envSelectedChannelIds.length + ' określonych'}`);
+  if (!selectedChannels.isEmpty && envSelectedChannelIds.length > 0) {
+    logger.info(`  • Lista wybranych: ${envSelectedChannelIds.slice(0, 5).join(', ')}${envSelectedChannelIds.length > 5 ? '...' : ''}`);
+  }
 
   const programmesByChannel = new Map<string, EpgProgram[]>();
   let processedPrograms = 0;
   let skippedPrograms = 0;
+  let skippedByDate = 0;
+  let skippedByChannel = 0;
+  let skippedBySelection = 0;
+  let todayPrograms = 0;
+  
   const now = DateTime.utc();
+  const today = now.startOf('day');
   const maxTime = now.plus({ days: MAX_PROGRAM_DAYS });
 
   logger.info(`🔄 Przetwarzam ${programmeNodes.length} programów z XML...`);
+  const minTime = now.minus({ days: 7 }); // Akceptuj programy z ostatnich 7 dni
+  logger.info(`📅 Zakres dat: od ${minTime.toISO()} (7 dni wstecz) do ${maxTime.toISO()} (${MAX_PROGRAM_DAYS} dni w przód)`);
+  logger.info(`📅 Dzisiaj: ${today.toISO()}, Teraz: ${now.toISO()}`);
 
   for (const programme of programmeNodes) {
     const channelId = programme['@_channel'];
@@ -176,13 +213,15 @@ export async function importIptvOrgEpg(
       continue;
     }
     if (!isChannelIdAllowed(channelId)) {
-      skippedPrograms += 1;
+      skippedByChannel += 1;
       continue;
     }
-    if (!isChannelSelectedById(selectedChannels, channelId)) {
-      skippedPrograms += 1;
-      continue;
-    }
+    // Dla epg.ovh ignorujemy IPTV_ORG_SELECTED_IDS - importujemy wszystkie polskie kanały (z prefiksem pl/)
+    // Filtr prefiksów (pl/) już zapewnia, że tylko polskie kanały są importowane
+    // if (!selectedChannels.isEmpty && !isChannelSelectedById(selectedChannels, channelId)) {
+    //   skippedBySelection += 1;
+    //   continue;
+    // }
 
     const startTs = parseTimestamp(programme['@_start']);
     if (!startTs) {
@@ -191,18 +230,33 @@ export async function importIptvOrgEpg(
     }
 
     const start = DateTime.fromJSDate(startTs).toUTC();
-    // Filtruj tylko programy z przyszłości (nie odrzucaj programów z przeszłości - mogą być jeszcze aktualne)
-    // Ale odrzuć programy zbyt daleko w przyszłości
-    if (start > maxTime) {
-      skippedPrograms += 1;
+    const programDay = start.startOf('day');
+    
+    // minTime jest już zdefiniowane wyżej (7 dni wstecz)
+    // Sprawdź czy program mieści się w zakresie dat
+    if (start < minTime) {
+      // Program zbyt stary - pomiń
+      skippedByDate += 1;
       continue;
     }
     
-    // Loguj programy z dzisiaj dla debugowania
-    const today = DateTime.utc().startOf('day');
-    const programDay = start.startOf('day');
+    if (start > maxTime) {
+      // Program zbyt daleko w przyszłości - pomiń
+      skippedByDate += 1;
+      continue;
+    }
+    
+    // Loguj programy z dzisiaj i przyszłości
     if (programDay.equals(today)) {
-      logger.debug(`Program z dzisiaj: ${programme['@_channel']} - ${pickText(programme.title)} - ${start.toISO()}`);
+      todayPrograms += 1;
+      if (todayPrograms <= 20) {
+        logger.info(`📺 Program z dzisiaj: ${channelId} - ${pickText(programme.title)} - ${start.toFormat('yyyy-MM-dd HH:mm')} UTC`);
+      }
+    } else if (start > now && start <= maxTime) {
+      // Loguj też programy z najbliższych dni dla debugowania
+      if (todayPrograms < 5) {
+        logger.debug(`📅 Program z przyszłości: ${channelId} - ${pickText(programme.title)} - ${start.toFormat('yyyy-MM-dd HH:mm')} UTC`);
+      }
     }
 
     const endTs = programme['@_stop'] ? parseTimestamp(programme['@_stop']) : null;
@@ -240,7 +294,8 @@ export async function importIptvOrgEpg(
   }
   
   logger.info(
-    `✅ Przetworzono ${processedPrograms} programów, pominięto ${skippedPrograms} (łącznie ${programmeNodes.length} w XML).`,
+    `✅ Przetworzono ${processedPrograms} programów (w tym ${todayPrograms} z dzisiaj), pominięto:` +
+    ` ${skippedPrograms} (brak danych), ${skippedByChannel} (prefiks), ${skippedBySelection} (wybór), ${skippedByDate} (data) - łącznie ${programmeNodes.length} w XML.`,
   );
 
   const channels: EpgChannel[] = [];
@@ -268,7 +323,9 @@ export async function importIptvOrgEpg(
       directLogo ??
       findLogoForChannel(logoMap, channel['@_id'], name);
 
-    if (!isChannelWhitelisted(allowedSlugs, channel['@_id'], name)) {
+    // Sprawdź czy kanał jest na liście polskich stacji (jeśli lista istnieje)
+    // Jeśli lista jest pusta, akceptuj wszystkie kanały z dozwolonym prefiksem (pl/)
+    if (allowedSlugs.size > 0 && !isChannelWhitelisted(allowedSlugs, channel['@_id'], name)) {
       if (verbose) {
         logger.info(`  • Pomijam kanał ${name} (${channel['@_id']}) – poza listą polskich stacji.`);
       }
@@ -282,7 +339,8 @@ export async function importIptvOrgEpg(
       ...(enrichedLogo ? { logo: enrichedLogo } : {}),
     };
 
-    if (!isChannelSelected(selectedChannels, channel['@_id'], name)) {
+    // Jeśli nie ma wybranych kanałów, importuj wszystkie z dozwolonym prefiksem
+    if (!selectedChannels.isEmpty && !isChannelSelected(selectedChannels, channel['@_id'], name)) {
       continue;
     }
 
@@ -408,7 +466,7 @@ async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; EPG-Importer/1.0)',
-        'Accept': 'application/xml, text/xml, */*',
+        'Accept': 'application/xml, text/xml, application/gzip, */*',
       },
     };
     
@@ -496,6 +554,35 @@ async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
 
 async function loadFromFile(filePath: string) {
   return readFile(filePath, 'utf-8');
+}
+
+async function loadFromUrlWithFallback(urls: readonly string[], logger: FastifyBaseLogger): Promise<string> {
+  const errors: Array<{ url: string; error: Error }> = [];
+  
+  for (const url of urls) {
+    try {
+      logger.info(`🔄 Próbuję pobrać EPG z: ${url}`);
+      const xml = await loadFromUrl(url, logger);
+      logger.info(`✅ Udało się pobrać EPG z: ${url}`);
+      return xml;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      errors.push({ url, error: err });
+      logger.warn({ url, error: err.message }, `❌ Nie udało się pobrać EPG z ${url}, próbuję następne źródło...`);
+    }
+  }
+  
+  // Wszystkie źródła zawiodły
+  logger.error(
+    {
+      errors: errors.map((e) => ({ url: e.url, message: e.error.message })),
+      totalSources: urls.length,
+    },
+    'Wszystkie źródła EPG zawiodły',
+  );
+  throw new Error(
+    `Nie udało się pobrać EPG z żadnego źródła. Próbowano: ${urls.join(', ')}. Ostatni błąd: ${errors[errors.length - 1]?.error.message}`,
+  );
 }
 
 function resolvePathMaybe(pathValue: string | null | undefined) {
@@ -826,6 +913,8 @@ function isChannelWhitelisted(
   channelId: string | undefined,
   channelName: string | undefined,
 ) {
+  // Jeśli lista jest pusta, akceptuj wszystkie kanały z dozwolonym prefiksem (pl/)
+  // Prefiks już zapewnia, że tylko polskie kanały są importowane
   if (allowedSlugs.size === 0) {
     return true;
   }
