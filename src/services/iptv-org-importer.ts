@@ -383,10 +383,25 @@ async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
   
   try {
     logger.info(`🌐 Wysyłam żądanie HTTP GET do: ${url}`);
-    const response = await fetch(url, { signal: controller.signal });
+    
+    // Sprawdź czy fetch jest dostępny
+    if (typeof fetch === 'undefined') {
+      throw new Error('fetch is not available in this environment');
+    }
+    
+    const fetchOptions: RequestInit = {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; EPG-Importer/1.0)',
+        'Accept': 'application/xml, text/xml, */*',
+      },
+    };
+    
+    logger.debug({ url, options: fetchOptions }, 'Fetch options');
+    const response = await fetch(url, fetchOptions);
     clearTimeout(timeoutId);
     
-    logger.info(`📡 Otrzymano odpowiedź: status ${response.status} ${response.statusText}`);
+    logger.info(`📡 Otrzymano odpowiedź: status ${response.status} ${response.statusText}, headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()))}`);
     
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'Nie udało się odczytać treści odpowiedzi');
@@ -396,15 +411,26 @@ async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
           statusText: response.statusText,
           url,
           errorBody: errorText.substring(0, 500),
+          headers: Object.fromEntries(response.headers.entries()),
         },
         'HTTP request failed',
       );
-      throw new Error(`Nie udało się pobrać feedu (status ${response.status} ${response.statusText})`);
+      throw new Error(`Nie udało się pobrać feedu (status ${response.status} ${response.statusText}): ${errorText.substring(0, 200)}`);
     }
 
     logger.info('📥 Pobieram treść odpowiedzi...');
     const text = await response.text();
     logger.info(`✅ Pobrano treść (${text.length} znaków)`);
+    
+    if (text.length === 0) {
+      throw new Error('Otrzymano pustą odpowiedź z serwera');
+    }
+    
+    // Sprawdź czy to wygląda na XML
+    if (!text.trim().startsWith('<?xml') && !text.trim().startsWith('<tv')) {
+      logger.warn({ textPreview: text.substring(0, 200) }, 'Otrzymana treść nie wygląda na XML');
+    }
+    
     return text;
   } catch (error) {
     clearTimeout(timeoutId);
@@ -412,6 +438,30 @@ async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
       logger.error({ url, timeout: '5 minutes' }, 'Timeout podczas pobierania feedu EPG');
       throw new Error(`Timeout podczas pobierania feedu EPG z ${url} (przekroczono 5 minut)`);
     }
+    
+    // Sprawdź czy to błąd sieciowy
+    if (error instanceof Error) {
+      if (error.message.includes('ECONNREFUSED') || error.message.includes('ENOTFOUND') || error.message.includes('getaddrinfo')) {
+        logger.error(
+          {
+            error: error.message,
+            url,
+            hint: 'Sprawdź czy Railway ma dostęp do internetu i czy URL jest poprawny',
+          },
+          'Network error during EPG feed download',
+        );
+      } else if (error.message.includes('certificate') || error.message.includes('SSL') || error.message.includes('TLS')) {
+        logger.error(
+          {
+            error: error.message,
+            url,
+            hint: 'Problem z certyfikatem SSL',
+          },
+          'SSL error during EPG feed download',
+        );
+      }
+    }
+    
     logger.error(
       {
         error,
