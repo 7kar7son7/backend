@@ -393,7 +393,8 @@ async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
       throw new Error('fetch is not available in this environment');
     }
     
-    const fetchOptions: RequestInit = {
+    // undici ma swoje własne typy RequestInit, więc nie typujemy explicite
+    const fetchOptions = {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; EPG-Importer/1.0)',
