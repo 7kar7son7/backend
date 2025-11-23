@@ -440,6 +440,15 @@ export async function pruneDisallowedChannels(
   const allowedSlugs = await loadAllowedChannelSlugs(logger);
 
   const removable = channels.filter((channel) => {
+    // Kanały z open-epg.com i epg.ovh są zawsze polskie (mają inne ID)
+    const isFromOpenEpg = channel.externalId?.endsWith('.pl') ?? false;
+    const isFromEpgOvh = !channel.externalId?.includes('/') && !channel.externalId?.startsWith('pl/');
+    
+    // Jeśli kanał jest z open-epg.com lub epg.ovh, nie usuwaj go
+    if (isFromOpenEpg || isFromEpgOvh) {
+      return false;
+    }
+    
     const idAllowed = isChannelIdAllowed(channel.externalId);
     const whitelistAllowed = isChannelWhitelisted(
       allowedSlugs,
@@ -976,6 +985,11 @@ function isChannelWhitelisted(
   // Jeśli lista jest pusta, akceptuj wszystkie kanały z dozwolonym prefiksem (pl/)
   // Prefiks już zapewnia, że tylko polskie kanały są importowane
   if (allowedSlugs.size === 0) {
+    return true;
+  }
+  
+  // Kanały z open-epg.com mają końcówkę .pl - wszystkie są polskie
+  if (channelId?.endsWith('.pl')) {
     return true;
   }
 
