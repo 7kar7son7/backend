@@ -66,10 +66,21 @@ export default async function programsRoutes(app: FastifyInstance) {
               ],
             },
             // Filtruj: pokazuj tylko programy, które jeszcze się nie zakończyły
+            // I które się już rozpoczęły lub dopiero się zaczną
             {
-              endsAt: {
-                gt: minTime,
-              },
+              OR: [
+                // Program już się rozpoczął (startsAt <= now) i jeszcze się nie zakończył
+                {
+                  AND: [
+                    { startsAt: { lte: minTime } },
+                    { endsAt: { gt: minTime } },
+                  ],
+                },
+                // Program dopiero się zacznie (startsAt > now)
+                {
+                  startsAt: { gt: minTime },
+                },
+              ],
             },
           ],
         },
@@ -89,8 +100,30 @@ export default async function programsRoutes(app: FastifyInstance) {
 
       const filteredPrograms = programs.filter((program) => program.channel != null);
       
+      // Sortuj programy: najpierw wcześniejsze niż aktualna godzina (malejąco),
+      // potem późniejsze (rosnąco) - tak, aby aktualna godzina była "na górze"
+      const sortedPrograms = filteredPrograms.sort((a, b) => {
+        const aStartsAt = a.startsAt.getTime();
+        const bStartsAt = b.startsAt.getTime();
+        const nowTime = now.getTime();
+        
+        const aIsPast = aStartsAt < nowTime;
+        const bIsPast = bStartsAt < nowTime;
+        
+        if (aIsPast && bIsPast) {
+          // Oba są w przeszłości - sortuj malejąco (najpóźniejsze wcześniejsze na górze)
+          return bStartsAt - aStartsAt;
+        } else if (!aIsPast && !bIsPast) {
+          // Oba są w przyszłości - sortuj rosnąco (najwcześniejsze późniejsze na dole)
+          return aStartsAt - bStartsAt;
+        } else {
+          // Jeden w przeszłości, jeden w przyszłości - przeszłość przed przyszłością
+          return aIsPast ? -1 : 1;
+        }
+      });
+      
       return {
-        data: filteredPrograms.map((program) => ({
+        data: sortedPrograms.map((program) => ({
             id: program.id,
             title: program.title,
             channelId: program.channelId,
