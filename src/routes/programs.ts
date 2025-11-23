@@ -13,6 +13,14 @@ const dayQuerySchema = z.object({
         return undefined;
       }
     }),
+  limit: z
+    .string()
+    .optional()
+    .transform((value) => (value ? Number.parseInt(value, 10) : undefined)),
+  offset: z
+    .string()
+    .optional()
+    .transform((value) => (value ? Number.parseInt(value, 10) : undefined)),
 });
 
 export default async function programsRoutes(app: FastifyInstance) {
@@ -80,7 +88,8 @@ export default async function programsRoutes(app: FastifyInstance) {
         orderBy: {
           startsAt: 'asc',
         },
-        take: 500, // Limit do 500 programów - wystarczy na cały dzień
+        take: query.limit ?? 500, // Domyślnie 500, ale można ograniczyć przez query
+        skip: query.offset ?? 0, // Paginacja
       });
 
       app.log.info({

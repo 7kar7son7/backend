@@ -10,6 +10,14 @@ const listQuerySchema = z.object({
     .union([z.literal('true'), z.literal('false')])
     .optional()
     .transform((value) => (value ? value === 'true' : undefined)),
+  limit: z
+    .string()
+    .optional()
+    .transform((value) => (value ? Number.parseInt(value, 10) : undefined)),
+  offset: z
+    .string()
+    .optional()
+    .transform((value) => (value ? Number.parseInt(value, 10) : undefined)),
 });
 
 const programsQuerySchema = z.object({
@@ -32,12 +40,18 @@ export default async function channelsRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
     const query = listQuerySchema.parse(request.query);
     const includePrograms = query.includePrograms === true ? true : undefined;
-    const filters: { search?: string; includePrograms?: boolean } = {};
+    const filters: { search?: string; includePrograms?: boolean; limit?: number; offset?: number } = {};
     if (query.search) {
       filters.search = query.search;
     }
     if (includePrograms) {
       filters.includePrograms = true;
+    }
+    if (query.limit !== undefined) {
+      filters.limit = query.limit;
+    }
+    if (query.offset !== undefined) {
+      filters.offset = query.offset;
     }
 
     const channels = await channelService.listChannels(filters);
