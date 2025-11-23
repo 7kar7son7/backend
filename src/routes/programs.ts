@@ -91,6 +91,7 @@ export default async function programsRoutes(app: FastifyInstance) {
       
       // Sortuj programy: najpierw wcześniejsze niż aktualna godzina (malejąco),
       // potem późniejsze (rosnąco) - tak, aby aktualna godzina była "na górze"
+      // Używamy sortowania w pamięci, ale tylko dla programów z kanałami (już przefiltrowane)
       const sortedPrograms = filteredPrograms.sort((a, b) => {
         const aStartsAt = a.startsAt.getTime();
         const bStartsAt = b.startsAt.getTime();
@@ -117,6 +118,7 @@ export default async function programsRoutes(app: FastifyInstance) {
             title: program.title,
             channelId: program.channelId,
             channelName: program.channel?.name ?? program.channelId,
+            channelLogoUrl: program.channel?.logoUrl ?? null,
             description: program.description,
             seasonNumber: program.seasonNumber,
             episodeNumber: program.episodeNumber,
