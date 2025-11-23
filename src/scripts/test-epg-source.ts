@@ -2,20 +2,44 @@
 import { fetch } from 'undici';
 import { XMLParser } from 'fast-xml-parser';
 import { DateTime } from 'luxon';
+import { gunzipSync } from 'node:zlib';
 
 async function main() {
-  const url = 'https://epg.ovh/pl.xml';
+  const url = process.argv[2] || 'https://epg.ovh/pl.xml';
   console.log(`🔍 Sprawdzam źródło EPG: ${url}\n`);
 
   try {
     // Pobierz XML
     console.log('📥 Pobieram XML...');
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; EPG-Importer/1.0)',
+        'Accept': 'application/xml, text/xml, application/gzip, */*',
+      },
+    });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-    const xml = await response.text();
-    console.log(`✅ Pobrano XML (${xml.length} znaków)\n`);
+    
+    // Sprawdź czy odpowiedź jest skompresowana gzip
+    const contentType = response.headers.get('content-type') || '';
+    const contentEncoding = response.headers.get('content-encoding') || '';
+    const isGzip = url.endsWith('.gz') || 
+                   contentType.includes('gzip') || 
+                   contentEncoding.includes('gzip') ||
+                   contentType.includes('application/gzip');
+    
+    let xml: string;
+    if (isGzip) {
+      console.log('📦 Wykryto plik gzip, dekompresuję...');
+      const buffer = await response.arrayBuffer();
+      const decompressed = gunzipSync(Buffer.from(buffer));
+      xml = decompressed.toString('utf-8');
+      console.log(`✅ Zdekompresowano gzip (${xml.length} znaków)\n`);
+    } else {
+      xml = await response.text();
+      console.log(`✅ Pobrano XML (${xml.length} znaków)\n`);
+    }
 
     // Parsuj XML
     console.log('🔄 Parsuję XML...');

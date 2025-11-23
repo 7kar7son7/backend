@@ -5,15 +5,24 @@ import { DateTime } from 'luxon';
 import { readFile } from 'node:fs/promises';
 import { fetch } from 'undici';
 import { isAbsolute, resolve } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 
 import { env } from '../config/env';
 import { EpgImportService, type EpgChannel, type EpgFeed, type EpgProgram } from './epg-import.service';
 
 // Lista źródeł EPG z priorytetem - pierwsze działające będzie użyte
+// epg.ovh oferuje różne wersje EPG dla Polski
+// Lista źródeł EPG z priorytetem - pierwsze działające będzie użyte
+// Próbujemy różnych źródeł EPG dla Polski - automatyczny fallback
 const EPG_SOURCES = [
-  'https://epg.ovh/pl.xml', // Aktualizowane codziennie, polskie EPG
-  'https://epg.best/epg.xml.gz', // Alternatywne źródło
-  'https://iptv-org.github.io/epg/guides/pl/pl.xml', // GitHub (może być nieaktualne)
+  'https://www.open-epg.com/files/poland1.xml.gz', // Open-EPG - 583 kanały, 1.73 MB (skompresowane), aktualizacja codzienna
+  'https://www.open-epg.com/files/poland2.xml.gz', // Open-EPG - 618 kanałów, 621 KB (skompresowane), aktualizacja codzienna
+  'https://www.open-epg.com/files/poland1.xml', // Open-EPG - fallback bez kompresji (15.06 MB, 583 kanały)
+  'https://www.open-epg.com/files/poland2.xml', // Open-EPG - fallback bez kompresji (7.38 MB, 618 kanałów)
+  'https://epg.ovh/plar.xml', // 10-dniowe EPG z 5-dniowym archiwum (NAJLEPSZE - najnowsze dane)
+  'https://epg.ovh/pl.xml', // 5-dniowe EPG (standardowe)
+  'https://epg.ovh/pltv.xml', // EPG z dodatkowymi informacjami
+  'https://raw.githubusercontent.com/iptv-org/epg/master/guides/pl/pl.xml', // GitHub iptv-org (backup)
 ] as const;
 
 const DEFAULT_IPTV_URL = EPG_SOURCES[0];
@@ -91,26 +100,27 @@ export async function importIptvOrgEpg(
   logger: FastifyBaseLogger,
   options: IptvOrgImportOptions = {},
 ) {
-  const resolvedFile = resolvePathMaybe(options.file ?? env.EPG_SOURCE_FILE ?? process.env.EPG_SOURCE_FILE ?? null);
-  const finalUrl =
-    options.file != null
-      ? undefined
-      : options.url ?? env.EPG_SOURCE_URL ?? DEFAULT_IPTV_URL;
+  // PRIORYTET: URL zawsze ma pierwszeństwo nad plikiem lokalnym!
+  const finalUrl = options.url ?? env.EPG_SOURCE_URL ?? process.env.EPG_SOURCE_URL ?? DEFAULT_IPTV_URL;
+  const resolvedFile = finalUrl 
+    ? null  // Jeśli jest URL, IGNORUJ plik lokalny całkowicie
+    : resolvePathMaybe(options.file ?? env.EPG_SOURCE_FILE ?? process.env.EPG_SOURCE_FILE ?? null);
 
   if (!resolvedFile && !finalUrl) {
     throw new Error('Brak źródła feedu IPTV-Org (ustaw --url/--file lub zmienne EPG_SOURCE_URL / EPG_SOURCE_FILE).');
   }
 
-  const sourceLabel = resolvedFile ?? finalUrl ?? DEFAULT_IPTV_URL;
+  const sourceLabel = finalUrl ?? resolvedFile ?? DEFAULT_IPTV_URL;
   logger.info(`📡 Rozpoczynam import EPG z ${sourceLabel}`);
 
   let xml: string;
   try {
-    if (resolvedFile) {
-      logger.info(`📥 Próbuję pobrać XML z pliku: ${resolvedFile}`);
-      xml = await loadFromFile(resolvedFile);
-      logger.info(`✅ Pobrano XML z pliku (${xml.length} znaków)`);
-    } else if (finalUrl) {
+    if (finalUrl) {
+      // URL ma priorytet - zawsze używaj URL jeśli jest dostępny
+      const urlsToTry = finalUrl === DEFAULT_IPTV_URL ? EPG_SOURCES : [finalUrl];
+      xml = await loadFromUrlWithFallback(urlsToTry, logger);
+      logger.info(`✅ Pobrano XML (${xml.length} znaków)`);
+    } else if (resolvedFile) {
       // Jeśli użyto domyślnego URL, spróbuj wszystkich źródeł jako fallback
       const urlsToTry = finalUrl === DEFAULT_IPTV_URL ? EPG_SOURCES : [finalUrl];
       xml = await loadFromUrlWithFallback(urlsToTry, logger);
@@ -202,8 +212,9 @@ export async function importIptvOrgEpg(
   const maxTime = now.plus({ days: MAX_PROGRAM_DAYS });
 
   logger.info(`🔄 Przetwarzam ${programmeNodes.length} programów z XML...`);
-  const minTime = now.minus({ days: 7 }); // Akceptuj programy z ostatnich 7 dni
-  logger.info(`📅 Zakres dat: od ${minTime.toISO()} (7 dni wstecz) do ${maxTime.toISO()} (${MAX_PROGRAM_DAYS} dni w przód)`);
+  // Akceptuj programy z dzisiaj i przyszłe (nie importuj starych programów)
+  const minTime = today; // Tylko programy z dzisiaj i nowsze
+  logger.info(`📅 Zakres dat: od ${minTime.toISO()} (dzisiaj) do ${maxTime.toISO()} (${MAX_PROGRAM_DAYS} dni w przód)`);
   logger.info(`📅 Dzisiaj: ${today.toISO()}, Teraz: ${now.toISO()}`);
 
   for (const programme of programmeNodes) {
@@ -212,16 +223,21 @@ export async function importIptvOrgEpg(
       skippedPrograms += 1;
       continue;
     }
-    if (!isChannelIdAllowed(channelId)) {
+    // Dla epg.ovh i open-epg.com wszystkie kanały są polskie (nie mają prefiksu pl/)
+    // Dla innych źródeł sprawdź prefiks pl/
+    const isEpgOvh = finalUrl?.includes('epg.ovh') ?? false;
+    const isOpenEpg = finalUrl?.includes('open-epg.com') ?? false;
+    if (!isEpgOvh && !isOpenEpg && !isChannelIdAllowed(channelId)) {
       skippedByChannel += 1;
       continue;
     }
-    // Dla epg.ovh ignorujemy IPTV_ORG_SELECTED_IDS - importujemy wszystkie polskie kanały (z prefiksem pl/)
-    // Filtr prefiksów (pl/) już zapewnia, że tylko polskie kanały są importowane
-    // if (!selectedChannels.isEmpty && !isChannelSelectedById(selectedChannels, channelId)) {
-    //   skippedBySelection += 1;
-    //   continue;
-    // }
+    
+    // Jeśli jest lista wybranych kanałów, sprawdź czy kanał jest na liście
+    // Dla epg.ovh i open-epg.com ignorujemy IPTV_ORG_SELECTED_IDS - importujemy wszystkie polskie kanały
+    if (!isEpgOvh && !isOpenEpg && !selectedChannels.isEmpty && !isChannelSelectedById(selectedChannels, channelId)) {
+      skippedBySelection += 1;
+      continue;
+    }
 
     const startTs = parseTimestamp(programme['@_start']);
     if (!startTs) {
@@ -232,10 +248,10 @@ export async function importIptvOrgEpg(
     const start = DateTime.fromJSDate(startTs).toUTC();
     const programDay = start.startOf('day');
     
-    // minTime jest już zdefiniowane wyżej (7 dni wstecz)
+    // minTime = dzisiaj (startOf('day')) - akceptuj tylko dzisiaj i przyszłe
     // Sprawdź czy program mieści się w zakresie dat
     if (start < minTime) {
-      // Program zbyt stary - pomiń
+      // Program z przeszłości (przed dzisiaj) - pomiń
       skippedByDate += 1;
       continue;
     }
@@ -307,7 +323,11 @@ export async function importIptvOrgEpg(
   const allowedSlugs = await loadAllowedChannelSlugs(logger);
 
   for (const channel of channelNodes) {
-    if (!isChannelIdAllowed(channel['@_id'])) {
+    // Dla epg.ovh i open-epg.com wszystkie kanały są polskie (nie mają prefiksu pl/)
+    // Dla innych źródeł sprawdź prefiks pl/
+    const isEpgOvh = finalUrl?.includes('epg.ovh') ?? false;
+    const isOpenEpg = finalUrl?.includes('open-epg.com') ?? false;
+    if (!isEpgOvh && !isOpenEpg && !isChannelIdAllowed(channel['@_id'])) {
       continue;
     }
     const programs = programmesByChannel.get(channel['@_id']);
@@ -375,6 +395,11 @@ export async function importIptvOrgEpg(
     logger.info('🔄 Rozpoczynam zapis do bazy danych...');
     const result = await service.importFeed(feed);
     logger.info(`✅ Zaimportowano ${result.channelCount} kanałów i ${result.programCount} audycji.`);
+    
+    // Usuń stare programy (starsze niż 1 dzień)
+    const maxAgeDays = Number.parseInt(process.env.EPG_PRUNE_MAX_AGE_DAYS ?? '1', 10) || 1;
+    await service.pruneOldPrograms(maxAgeDays);
+    
     return result;
   } catch (error) {
     const totalPrograms = feed.channels.reduce((sum, ch) => sum + (ch.programs?.length ?? 0), 0);
@@ -447,7 +472,8 @@ export async function pruneDisallowedChannels(
 
 async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 minut timeout
+  // Zwiększony timeout dla dużych plików EPG (epg.ovh/pl.xml to ~65MB)
+  const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000); // 10 minut timeout
   
   try {
     logger.info(`🌐 Wysyłam żądanie HTTP GET do: ${url}`);
@@ -495,8 +521,27 @@ async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
     }
 
     logger.info('📥 Pobieram treść odpowiedzi...');
-    const text = await response.text();
-    logger.info(`✅ Pobrano treść (${text.length} znaków)`);
+    
+    // Sprawdź czy odpowiedź jest skompresowana gzip
+    const contentType = response.headers.get('content-type') || '';
+    const contentEncoding = response.headers.get('content-encoding') || '';
+    const isGzip = url.endsWith('.gz') || 
+                   contentType.includes('gzip') || 
+                   contentEncoding.includes('gzip') ||
+                   contentType.includes('application/gzip');
+    
+    let text: string;
+    
+    if (isGzip) {
+      logger.info('📦 Wykryto plik gzip, dekompresuję...');
+      const buffer = await response.arrayBuffer();
+      const decompressed = gunzipSync(Buffer.from(buffer));
+      text = decompressed.toString('utf-8');
+      logger.info(`✅ Zdekompresowano gzip (${text.length} znaków)`);
+    } else {
+      text = await response.text();
+      logger.info(`✅ Pobrano treść (${text.length} znaków)`);
+    }
     
     if (text.length === 0) {
       throw new Error('Otrzymano pustą odpowiedź z serwera');
@@ -740,13 +785,27 @@ function parseTimestamp(raw: string | undefined): Date | null {
   if (!raw) return null;
   const trimmed = raw.trim();
 
-  let dt = DateTime.fromFormat(trimmed, 'yyyyLLddHHmmss ZZZ', {
-    setZone: true,
-  });
-  if (!dt.isValid) {
-    const withoutOffset = trimmed.split(' ')[0] ?? trimmed;
-    dt = DateTime.fromFormat(withoutOffset, 'yyyyLLddHHmmss', { zone: 'UTC' });
+  // Próbuj różne formaty dat
+  const formats = [
+    'yyyyLLddHHmmss ZZZ',  // 20251121001000 +0100
+    'yyyyLLddHHmmssZZZ',   // 20251121001000+0100
+    'yyyyLLddHHmmss',      // 20251121001000 (bez offsetu)
+  ];
+
+  for (const format of formats) {
+    let dt = DateTime.fromFormat(trimmed, format, {
+      setZone: format.includes('ZZZ') || format.includes('Z'),
+    });
+    
+    if (dt.isValid) {
+      return dt.toUTC().toJSDate();
+    }
   }
+
+  // Ostatnia próba - bez offsetu, traktuj jako UTC
+  const withoutOffset = trimmed.split(' ')[0] ?? trimmed.split('+')[0] ?? trimmed.split('-')[0] ?? trimmed;
+  const dt = DateTime.fromFormat(withoutOffset, 'yyyyLLddHHmmss', { zone: 'UTC' });
+  
   return dt.isValid ? dt.toUTC().toJSDate() : null;
 }
 
