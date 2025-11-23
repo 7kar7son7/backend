@@ -113,6 +113,10 @@ export async function importIptvOrgEpg(
   const sourceLabel = finalUrl ?? resolvedFile ?? DEFAULT_IPTV_URL;
   logger.info(`📡 Rozpoczynam import EPG z ${sourceLabel}`);
 
+  // Sprawdź typ źródła (używane w wielu miejscach)
+  const isEpgOvh = finalUrl?.includes('epg.ovh') ?? false;
+  const isOpenEpg = finalUrl?.includes('open-epg.com') ?? false;
+
   let xml: string;
   try {
     if (finalUrl) {
@@ -225,8 +229,11 @@ export async function importIptvOrgEpg(
     }
     // Dla epg.ovh i open-epg.com wszystkie kanały są polskie (nie mają prefiksu pl/)
     // Dla innych źródeł sprawdź prefiks pl/
+<<<<<<< HEAD
     const isEpgOvh = finalUrl?.includes('epg.ovh') ?? false;
     const isOpenEpg = finalUrl?.includes('open-epg.com') ?? false;
+=======
+>>>>>>> 85df7e5953659977684332bbe5761bfc924dc5cb
     if (!isEpgOvh && !isOpenEpg && !isChannelIdAllowed(channelId)) {
       skippedByChannel += 1;
       continue;
@@ -325,8 +332,11 @@ export async function importIptvOrgEpg(
   for (const channel of channelNodes) {
     // Dla epg.ovh i open-epg.com wszystkie kanały są polskie (nie mają prefiksu pl/)
     // Dla innych źródeł sprawdź prefiks pl/
+<<<<<<< HEAD
     const isEpgOvh = finalUrl?.includes('epg.ovh') ?? false;
     const isOpenEpg = finalUrl?.includes('open-epg.com') ?? false;
+=======
+>>>>>>> 85df7e5953659977684332bbe5761bfc924dc5cb
     if (!isEpgOvh && !isOpenEpg && !isChannelIdAllowed(channel['@_id'])) {
       continue;
     }
@@ -344,8 +354,9 @@ export async function importIptvOrgEpg(
       findLogoForChannel(logoMap, channel['@_id'], name);
 
     // Sprawdź czy kanał jest na liście polskich stacji (jeśli lista istnieje)
+    // Dla epg.ovh i open-epg.com ignorujemy allowedSlugs - wszystkie kanały są polskie
     // Jeśli lista jest pusta, akceptuj wszystkie kanały z dozwolonym prefiksem (pl/)
-    if (allowedSlugs.size > 0 && !isChannelWhitelisted(allowedSlugs, channel['@_id'], name)) {
+    if (!isEpgOvh && !isOpenEpg && allowedSlugs.size > 0 && !isChannelWhitelisted(allowedSlugs, channel['@_id'], name)) {
       if (verbose) {
         logger.info(`  • Pomijam kanał ${name} (${channel['@_id']}) – poza listą polskich stacji.`);
       }
@@ -439,6 +450,15 @@ export async function pruneDisallowedChannels(
   const allowedSlugs = await loadAllowedChannelSlugs(logger);
 
   const removable = channels.filter((channel) => {
+    // Kanały z open-epg.com i epg.ovh są zawsze polskie (mają inne ID)
+    const isFromOpenEpg = channel.externalId?.endsWith('.pl') ?? false;
+    const isFromEpgOvh = !channel.externalId?.includes('/') && !channel.externalId?.startsWith('pl/');
+    
+    // Jeśli kanał jest z open-epg.com lub epg.ovh, nie usuwaj go
+    if (isFromOpenEpg || isFromEpgOvh) {
+      return false;
+    }
+    
     const idAllowed = isChannelIdAllowed(channel.externalId);
     const whitelistAllowed = isChannelWhitelisted(
       allowedSlugs,
@@ -975,6 +995,11 @@ function isChannelWhitelisted(
   // Jeśli lista jest pusta, akceptuj wszystkie kanały z dozwolonym prefiksem (pl/)
   // Prefiks już zapewnia, że tylko polskie kanały są importowane
   if (allowedSlugs.size === 0) {
+    return true;
+  }
+  
+  // Kanały z open-epg.com mają końcówkę .pl - wszystkie są polskie
+  if (channelId?.endsWith('.pl')) {
     return true;
   }
 

@@ -210,6 +210,26 @@ export class EpgImportService {
       programCount,
     };
   }
+
+  async pruneOldPrograms(maxAgeDays: number = 1): Promise<number> {
+    const now = new Date();
+    const cutoffDate = new Date(now.getTime() - maxAgeDays * 24 * 60 * 60 * 1000);
+    
+    this.logger.info(`🧹 Usuwam programy starsze niż ${maxAgeDays} dzień/dni (przed ${cutoffDate.toISOString()})...`);
+    
+    // Usuń programy, które już się zakończyły i są starsze niż maxAgeDays
+    const deleteResult = await this.prisma.program.deleteMany({
+      where: {
+        endsAt: {
+          lt: cutoffDate,
+        },
+      },
+    });
+
+    this.logger.info(`🗑️  Usunięto ${deleteResult.count} starych programów (zakończonych przed ${cutoffDate.toISOString()})`);
+    
+    return deleteResult.count;
+  }
 }
 
 function chunkArray<T>(items: readonly T[], chunkSize: number): T[][] {
