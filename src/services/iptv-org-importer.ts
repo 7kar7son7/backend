@@ -961,16 +961,25 @@ function findLogoForChannel(
 ) {
   const candidates = new Set<string>();
 
-  const idSlug = slugify(channelId.split('#')[1] ?? channelId);
+  // Dla kanałów z open-epg.com i epg.ovh ID może być np. "TVP 1.pl" - usuń .pl
+  const cleanId = channelId.replace(/\.pl$/, '');
+  const idSlug = slugify(cleanId.split('#')[1] ?? cleanId);
   if (idSlug) {
     candidates.add(idSlug);
     candidates.add(ensureSuffix(idSlug, 'pl'));
   }
 
-  const nameSlug = slugify(channelName ?? '');
+  // Dla nazwy też usuń .pl jeśli jest
+  const cleanName = (channelName ?? '').replace(/\.pl$/, '');
+  const nameSlug = slugify(cleanName);
   if (nameSlug) {
     candidates.add(nameSlug);
     candidates.add(ensureSuffix(nameSlug, 'pl'));
+  }
+
+  // Spróbuj też z .pl na końcu (dla kanałów które mają .pl w nazwie w logos.json)
+  if (nameSlug) {
+    candidates.add(`${nameSlug}pl`);
   }
 
   for (const slug of candidates) {
