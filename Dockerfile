@@ -10,14 +10,14 @@ COPY tsconfig.json ./
 # Zainstaluj wszystkie zależności (też dev dla builda)
 RUN npm ci
 
+# Wygeneruj Prisma Client (przed buildem TypeScript)
+RUN npx prisma generate
+
 # Skopiuj kod źródłowy
 COPY src ./src
 
 # Zbuduj TypeScript
 RUN npm run build
-
-# Wygeneruj Prisma Client
-RUN npx prisma generate
 
 # Usuń dev dependencies (opcjonalne, oszczędza miejsce)
 RUN npm prune --production
