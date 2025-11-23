@@ -113,6 +113,10 @@ export async function importIptvOrgEpg(
   const sourceLabel = finalUrl ?? resolvedFile ?? DEFAULT_IPTV_URL;
   logger.info(`📡 Rozpoczynam import EPG z ${sourceLabel}`);
 
+  // Sprawdź typ źródła (używane w wielu miejscach)
+  const isEpgOvh = finalUrl?.includes('epg.ovh') ?? false;
+  const isOpenEpg = finalUrl?.includes('open-epg.com') ?? false;
+
   let xml: string;
   try {
     if (finalUrl) {
@@ -344,8 +348,9 @@ export async function importIptvOrgEpg(
       findLogoForChannel(logoMap, channel['@_id'], name);
 
     // Sprawdź czy kanał jest na liście polskich stacji (jeśli lista istnieje)
+    // Dla epg.ovh i open-epg.com ignorujemy allowedSlugs - wszystkie kanały są polskie
     // Jeśli lista jest pusta, akceptuj wszystkie kanały z dozwolonym prefiksem (pl/)
-    if (allowedSlugs.size > 0 && !isChannelWhitelisted(allowedSlugs, channel['@_id'], name)) {
+    if (!isEpgOvh && !isOpenEpg && allowedSlugs.size > 0 && !isChannelWhitelisted(allowedSlugs, channel['@_id'], name)) {
       if (verbose) {
         logger.info(`  • Pomijam kanał ${name} (${channel['@_id']}) – poza listą polskich stacji.`);
       }
@@ -439,6 +444,15 @@ export async function pruneDisallowedChannels(
   const allowedSlugs = await loadAllowedChannelSlugs(logger);
 
   const removable = channels.filter((channel) => {
+    // Kanały z open-epg.com i epg.ovh są zawsze polskie (mają inne ID)
+    const isFromOpenEpg = channel.externalId?.endsWith('.pl') ?? false;
+    const isFromEpgOvh = !channel.externalId?.includes('/') && !channel.externalId?.startsWith('pl/');
+    
+    // Jeśli kanał jest z open-epg.com lub epg.ovh, nie usuwaj go
+    if (isFromOpenEpg || isFromEpgOvh) {
+      return false;
+    }
+    
     const idAllowed = isChannelIdAllowed(channel.externalId);
     const whitelistAllowed = isChannelWhitelisted(
       allowedSlugs,
@@ -802,9 +816,10 @@ function parseTimestamp(raw: string | undefined): Date | null {
     }
   }
 
-  // Ostatnia próba - bez offsetu, traktuj jako UTC
+  // Ostatnia próba - bez offsetu, traktuj jako lokalna strefa czasowa (CET/CEST dla Polski)
+  // Dla źródeł EPG z Polski (open-epg.com, epg.ovh) daty bez offsetu są w CET/CEST
   const withoutOffset = trimmed.split(' ')[0] ?? trimmed.split('+')[0] ?? trimmed.split('-')[0] ?? trimmed;
-  const dt = DateTime.fromFormat(withoutOffset, 'yyyyLLddHHmmss', { zone: 'UTC' });
+  const dt = DateTime.fromFormat(withoutOffset, 'yyyyLLddHHmmss', { zone: 'Europe/Warsaw' });
   
   return dt.isValid ? dt.toUTC().toJSDate() : null;
 }
@@ -946,16 +961,25 @@ function findLogoForChannel(
 ) {
   const candidates = new Set<string>();
 
-  const idSlug = slugify(channelId.split('#')[1] ?? channelId);
+  // Dla kanałów z open-epg.com i epg.ovh ID może być np. "TVP 1.pl" - usuń .pl
+  const cleanId = channelId.replace(/\.pl$/, '');
+  const idSlug = slugify(cleanId.split('#')[1] ?? cleanId);
   if (idSlug) {
     candidates.add(idSlug);
     candidates.add(ensureSuffix(idSlug, 'pl'));
   }
 
-  const nameSlug = slugify(channelName ?? '');
+  // Dla nazwy też usuń .pl jeśli jest
+  const cleanName = (channelName ?? '').replace(/\.pl$/, '');
+  const nameSlug = slugify(cleanName);
   if (nameSlug) {
     candidates.add(nameSlug);
     candidates.add(ensureSuffix(nameSlug, 'pl'));
+  }
+
+  // Spróbuj też z .pl na końcu (dla kanałów które mają .pl w nazwie w logos.json)
+  if (nameSlug) {
+    candidates.add(`${nameSlug}pl`);
   }
 
   for (const slug of candidates) {
@@ -975,6 +999,11 @@ function isChannelWhitelisted(
   // Jeśli lista jest pusta, akceptuj wszystkie kanały z dozwolonym prefiksem (pl/)
   // Prefiks już zapewnia, że tylko polskie kanały są importowane
   if (allowedSlugs.size === 0) {
+    return true;
+  }
+  
+  // Kanały z open-epg.com mają końcówkę .pl - wszystkie są polskie
+  if (channelId?.endsWith('.pl')) {
     return true;
   }
 

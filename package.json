@@ -13,7 +13,10 @@
     "epg:import:iptv": "tsx src/scripts/import-epg-iptv-org.ts",
     "epg:prune": "tsx src/scripts/prune-non-pl-channels.ts",
     "db:seed:pl": "tsx src/scripts/seed-polish-channels.ts",
-    "epg:import:pl": "tsx src/scripts/import-selected-channels.ts"
+    "epg:import:pl": "tsx src/scripts/import-selected-channels.ts",
+    "db:check:programs": "tsx src/scripts/check-programs.ts",
+    "test:epg-source": "tsx src/scripts/test-epg-source.ts",
+    "check:epg-channels": "tsx src/scripts/check-epg-channels.ts"
   },
   "keywords": [],
   "author": "",
