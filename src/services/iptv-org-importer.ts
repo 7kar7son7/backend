@@ -344,8 +344,11 @@ export async function importIptvOrgEpg(
       findLogoForChannel(logoMap, channel['@_id'], name);
 
     // Sprawdź czy kanał jest na liście polskich stacji (jeśli lista istnieje)
+    // Dla epg.ovh i open-epg.com ignorujemy allowedSlugs - wszystkie kanały są polskie
     // Jeśli lista jest pusta, akceptuj wszystkie kanały z dozwolonym prefiksem (pl/)
-    if (allowedSlugs.size > 0 && !isChannelWhitelisted(allowedSlugs, channel['@_id'], name)) {
+    const isEpgOvh = finalUrl?.includes('epg.ovh') ?? false;
+    const isOpenEpg = finalUrl?.includes('open-epg.com') ?? false;
+    if (!isEpgOvh && !isOpenEpg && allowedSlugs.size > 0 && !isChannelWhitelisted(allowedSlugs, channel['@_id'], name)) {
       if (verbose) {
         logger.info(`  • Pomijam kanał ${name} (${channel['@_id']}) – poza listą polskich stacji.`);
       }
