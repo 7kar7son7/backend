@@ -73,12 +73,6 @@ export default async function programsRoutes(app: FastifyInstance) {
                 gt: minTime,
               },
             },
-            // Tylko programy z kanałami (channel nie jest null)
-            {
-              channel: {
-                isNot: null,
-              },
-            },
           ],
         },
         include: {
