@@ -83,7 +83,7 @@ export default async function programsRoutes(app: FastifyInstance) {
             episodeNumber: program.episodeNumber,
             startsAt: program.startsAt,
             endsAt: program.endsAt,
-            imageUrl: program.imageUrl,
+            imageUrl: program.imageUrl ?? program.channel?.logoUrl ?? null,
             tags: program.tags ?? [],
           })),
       };
