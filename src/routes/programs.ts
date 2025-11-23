@@ -66,21 +66,10 @@ export default async function programsRoutes(app: FastifyInstance) {
               ],
             },
             // Filtruj: pokazuj tylko programy, które jeszcze się nie zakończyły
-            // I które się już rozpoczęły lub dopiero się zaczną
             {
-              OR: [
-                // Program już się rozpoczął (startsAt <= now) i jeszcze się nie zakończył
-                {
-                  AND: [
-                    { startsAt: { lte: minTime } },
-                    { endsAt: { gt: minTime } },
-                  ],
-                },
-                // Program dopiero się zacznie (startsAt > now)
-                {
-                  startsAt: { gt: minTime },
-                },
-              ],
+              endsAt: {
+                gt: minTime,
+              },
             },
           ],
         },
