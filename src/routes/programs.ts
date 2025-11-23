@@ -29,29 +29,46 @@ export default async function programsRoutes(app: FastifyInstance) {
         ),
       );
       const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
+      const now = new Date();
 
       app.log.info({
         selectedDate: selectedDate.toISOString(),
         startOfDay: startOfDay.toISOString(),
         endOfDay: endOfDay.toISOString(),
+        now: now.toISOString(),
         queryDate: query.date?.toISOString(),
       }, 'Fetching programs for day');
 
+      // Dla dzisiejszego dnia: pokazuj tylko programy aktualnie emitowane lub przyszłe
+      // Dla innych dni: pokazuj wszystkie programy z tego dnia
+      const isToday = selectedDate.toDateString() === new Date().toDateString();
+      const minTime = isToday ? now : startOfDay;
+
       const programs = await app.prisma.program.findMany({
         where: {
-          OR: [
+          AND: [
             {
-              startsAt: {
-                gte: startOfDay,
-                lt: endOfDay,
-              },
+              OR: [
+                {
+                  startsAt: {
+                    gte: startOfDay,
+                    lt: endOfDay,
+                  },
+                },
+                {
+                  startsAt: {
+                    lt: endOfDay,
+                  },
+                  endsAt: {
+                    gt: startOfDay,
+                  },
+                },
+              ],
             },
+            // Filtruj: pokazuj tylko programy, które jeszcze się nie zakończyły
             {
-              startsAt: {
-                lt: endOfDay,
-              },
               endsAt: {
-                gt: startOfDay,
+                gt: minTime,
               },
             },
           ],
