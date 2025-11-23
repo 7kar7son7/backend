@@ -229,11 +229,8 @@ export async function importIptvOrgEpg(
     }
     // Dla epg.ovh i open-epg.com wszystkie kanały są polskie (nie mają prefiksu pl/)
     // Dla innych źródeł sprawdź prefiks pl/
-<<<<<<< HEAD
     const isEpgOvh = finalUrl?.includes('epg.ovh') ?? false;
     const isOpenEpg = finalUrl?.includes('open-epg.com') ?? false;
-=======
->>>>>>> 85df7e5953659977684332bbe5761bfc924dc5cb
     if (!isEpgOvh && !isOpenEpg && !isChannelIdAllowed(channelId)) {
       skippedByChannel += 1;
       continue;
@@ -332,11 +329,8 @@ export async function importIptvOrgEpg(
   for (const channel of channelNodes) {
     // Dla epg.ovh i open-epg.com wszystkie kanały są polskie (nie mają prefiksu pl/)
     // Dla innych źródeł sprawdź prefiks pl/
-<<<<<<< HEAD
     const isEpgOvh = finalUrl?.includes('epg.ovh') ?? false;
     const isOpenEpg = finalUrl?.includes('open-epg.com') ?? false;
-=======
->>>>>>> 85df7e5953659977684332bbe5761bfc924dc5cb
     if (!isEpgOvh && !isOpenEpg && !isChannelIdAllowed(channel['@_id'])) {
       continue;
     }
