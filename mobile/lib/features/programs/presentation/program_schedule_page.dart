@@ -58,12 +58,22 @@ class _ProgramSchedulePageState extends ConsumerState<ProgramSchedulePage> {
         bottom: false,
         child: state.when(
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, stackTrace) => _ErrorView(
-            message: error.toString(),
-            onRetry: () => ref
-                .read(programScheduleNotifierProvider.notifier)
-                .changeDay(DateTime.now()),
-          ),
+          error: (error, stackTrace) {
+            String userFriendlyMessage = 'Nie udało się pobrać programu';
+            if (error.toString().contains('502') || error.toString().contains('503') || error.toString().contains('504')) {
+              userFriendlyMessage = 'Serwer jest tymczasowo niedostępny. Spróbuj ponownie za chwilę.';
+            } else if (error.toString().contains('timeout') || error.toString().contains('Timeout')) {
+              userFriendlyMessage = 'Przekroczono limit czasu połączenia. Sprawdź połączenie internetowe.';
+            } else if (error.toString().contains('SocketException') || error.toString().contains('Network')) {
+              userFriendlyMessage = 'Brak połączenia z internetem. Sprawdź połączenie sieciowe.';
+            }
+            return _ErrorView(
+              message: userFriendlyMessage,
+              onRetry: () => ref
+                  .read(programScheduleNotifierProvider.notifier)
+                  .changeDay(DateTime.now()),
+            );
+          },
           data: (data) {
             final filteredPrograms = _filterPrograms(data.programs, _searchQuery);
 
@@ -557,6 +567,7 @@ class _ErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -566,18 +577,17 @@ class _ErrorView extends StatelessWidget {
             const Icon(Icons.error_outline, size: 48),
             const SizedBox(height: 12),
             Text(
-              'Nie udało się pobrać programu',
-              style: Theme.of(context).textTheme.titleMedium,
+              message,
+              style: theme.textTheme.titleMedium,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
-              message,
+              'Spróbuj ponownie za chwilę lub sprawdź połączenie internetowe.',
               textAlign: TextAlign.center,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Theme.of(context).colorScheme.error),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 16),
             FilledButton(

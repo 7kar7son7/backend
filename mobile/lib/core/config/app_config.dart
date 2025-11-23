@@ -7,7 +7,7 @@ class AppConfig {
   ///   flutter run --dart-define=API_BASE_URL=http://192.168.8.145:3001
   /// 
   /// Dla produkcji (publiczny serwer):
-  ///   flutter build appbundle --dart-define=API_BASE_URL=https://api.backontv.com
+  ///   flutter build appbundle --dart-define=API_BASE_URL=https://backend.devstudioit.app
   /// 
   /// UWAGA: Na produkcji NIE używaj localhost - to nie zadziała!
   static const apiBaseUrl = String.fromEnvironment(
