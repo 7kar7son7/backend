@@ -1,6 +1,5 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { DateTime } from 'luxon';
 
 const dayQuerySchema = z.object({
   date: z
@@ -115,16 +114,6 @@ export default async function programsRoutes(app: FastifyInstance) {
         });
       }
       
-      // Konwertuj daty z UTC na lokalny czas (CET/CEST) dla Polski
-      // Daty w bazie są w UTC, ale powinny być wyświetlane w lokalnym czasie
-      const toLocalTime = (date: Date): string => {
-        // Konwertuj UTC na Europe/Warsaw (CET/CEST) używając luxon
-        const utcDate = DateTime.fromJSDate(date, { zone: 'utc' });
-        const localDate = utcDate.setZone('Europe/Warsaw');
-        // Zwróć jako ISO string z offsetem
-        return localDate.toISO() ?? date.toISOString();
-      };
-      
       return {
         data: sortedPrograms.map((program) => ({
             id: program.id,
@@ -135,8 +124,8 @@ export default async function programsRoutes(app: FastifyInstance) {
             description: program.description,
             seasonNumber: program.seasonNumber,
             episodeNumber: program.episodeNumber,
-            startsAt: toLocalTime(program.startsAt),
-            endsAt: program.endsAt ? toLocalTime(program.endsAt) : null,
+            startsAt: program.startsAt,
+            endsAt: program.endsAt,
             imageUrl: program.imageUrl ?? program.channel?.logoUrl ?? null,
             tags: program.tags ?? [],
           })),
