@@ -22,9 +22,18 @@ class _ProgramApi implements ProgramApi {
   final ParseErrorLogger? errorLogger;
 
   @override
-  Future<ApiResponse<List<ProgramDto>>> getProgramsForDay(DateTime date) async {
+  Future<ApiResponse<List<ProgramDto>>> getProgramsForDay(
+    DateTime? date, {
+    int? limit,
+    int? offset,
+  }) async {
     final _extra = <String, dynamic>{};
-    final queryParameters = <String, dynamic>{r'date': date.toIso8601String()};
+    final queryParameters = <String, dynamic>{
+      r'date': date?.toIso8601String(),
+      r'limit': limit,
+      r'offset': offset,
+    };
+    queryParameters.removeWhere((k, v) => v == null);
     final _headers = <String, dynamic>{};
     const Map<String, dynamic>? _data = null;
     final _options = _setStreamType<ApiResponse<List<ProgramDto>>>(Options(

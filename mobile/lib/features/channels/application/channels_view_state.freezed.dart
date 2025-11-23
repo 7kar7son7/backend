@@ -18,6 +18,8 @@ final _privateConstructorUsedError = UnsupportedError(
 mixin _$ChannelsViewState {
   List<ChannelDto> get channels => throw _privateConstructorUsedError;
   Set<String> get followedChannelIds => throw _privateConstructorUsedError;
+  bool get isLoadingMore => throw _privateConstructorUsedError;
+  bool get hasMore => throw _privateConstructorUsedError;
 
   @JsonKey(ignore: true)
   $ChannelsViewStateCopyWith<ChannelsViewState> get copyWith =>
@@ -30,7 +32,11 @@ abstract class $ChannelsViewStateCopyWith<$Res> {
           ChannelsViewState value, $Res Function(ChannelsViewState) then) =
       _$ChannelsViewStateCopyWithImpl<$Res, ChannelsViewState>;
   @useResult
-  $Res call({List<ChannelDto> channels, Set<String> followedChannelIds});
+  $Res call(
+      {List<ChannelDto> channels,
+      Set<String> followedChannelIds,
+      bool isLoadingMore,
+      bool hasMore});
 }
 
 /// @nodoc
@@ -48,6 +54,8 @@ class _$ChannelsViewStateCopyWithImpl<$Res, $Val extends ChannelsViewState>
   $Res call({
     Object? channels = null,
     Object? followedChannelIds = null,
+    Object? isLoadingMore = null,
+    Object? hasMore = null,
   }) {
     return _then(_value.copyWith(
       channels: null == channels
@@ -58,6 +66,14 @@ class _$ChannelsViewStateCopyWithImpl<$Res, $Val extends ChannelsViewState>
           ? _value.followedChannelIds
           : followedChannelIds // ignore: cast_nullable_to_non_nullable
               as Set<String>,
+      isLoadingMore: null == isLoadingMore
+          ? _value.isLoadingMore
+          : isLoadingMore // ignore: cast_nullable_to_non_nullable
+              as bool,
+      hasMore: null == hasMore
+          ? _value.hasMore
+          : hasMore // ignore: cast_nullable_to_non_nullable
+              as bool,
     ) as $Val);
   }
 }
@@ -70,7 +86,11 @@ abstract class _$$ChannelsViewStateImplCopyWith<$Res>
       __$$ChannelsViewStateImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({List<ChannelDto> channels, Set<String> followedChannelIds});
+  $Res call(
+      {List<ChannelDto> channels,
+      Set<String> followedChannelIds,
+      bool isLoadingMore,
+      bool hasMore});
 }
 
 /// @nodoc
@@ -86,6 +106,8 @@ class __$$ChannelsViewStateImplCopyWithImpl<$Res>
   $Res call({
     Object? channels = null,
     Object? followedChannelIds = null,
+    Object? isLoadingMore = null,
+    Object? hasMore = null,
   }) {
     return _then(_$ChannelsViewStateImpl(
       channels: null == channels
@@ -96,6 +118,14 @@ class __$$ChannelsViewStateImplCopyWithImpl<$Res>
           ? _value._followedChannelIds
           : followedChannelIds // ignore: cast_nullable_to_non_nullable
               as Set<String>,
+      isLoadingMore: null == isLoadingMore
+          ? _value.isLoadingMore
+          : isLoadingMore // ignore: cast_nullable_to_non_nullable
+              as bool,
+      hasMore: null == hasMore
+          ? _value.hasMore
+          : hasMore // ignore: cast_nullable_to_non_nullable
+              as bool,
     ));
   }
 }
@@ -105,7 +135,9 @@ class __$$ChannelsViewStateImplCopyWithImpl<$Res>
 class _$ChannelsViewStateImpl extends _ChannelsViewState {
   const _$ChannelsViewStateImpl(
       {required final List<ChannelDto> channels,
-      required final Set<String> followedChannelIds})
+      required final Set<String> followedChannelIds,
+      this.isLoadingMore = false,
+      this.hasMore = false})
       : _channels = channels,
         _followedChannelIds = followedChannelIds,
         super._();
@@ -128,8 +160,15 @@ class _$ChannelsViewStateImpl extends _ChannelsViewState {
   }
 
   @override
+  @JsonKey()
+  final bool isLoadingMore;
+  @override
+  @JsonKey()
+  final bool hasMore;
+
+  @override
   String toString() {
-    return 'ChannelsViewState(channels: $channels, followedChannelIds: $followedChannelIds)';
+    return 'ChannelsViewState(channels: $channels, followedChannelIds: $followedChannelIds, isLoadingMore: $isLoadingMore, hasMore: $hasMore)';
   }
 
   @override
@@ -139,14 +178,19 @@ class _$ChannelsViewStateImpl extends _ChannelsViewState {
             other is _$ChannelsViewStateImpl &&
             const DeepCollectionEquality().equals(other._channels, _channels) &&
             const DeepCollectionEquality()
-                .equals(other._followedChannelIds, _followedChannelIds));
+                .equals(other._followedChannelIds, _followedChannelIds) &&
+            (identical(other.isLoadingMore, isLoadingMore) ||
+                other.isLoadingMore == isLoadingMore) &&
+            (identical(other.hasMore, hasMore) || other.hasMore == hasMore));
   }
 
   @override
   int get hashCode => Object.hash(
       runtimeType,
       const DeepCollectionEquality().hash(_channels),
-      const DeepCollectionEquality().hash(_followedChannelIds));
+      const DeepCollectionEquality().hash(_followedChannelIds),
+      isLoadingMore,
+      hasMore);
 
   @JsonKey(ignore: true)
   @override
@@ -159,13 +203,19 @@ class _$ChannelsViewStateImpl extends _ChannelsViewState {
 abstract class _ChannelsViewState extends ChannelsViewState {
   const factory _ChannelsViewState(
       {required final List<ChannelDto> channels,
-      required final Set<String> followedChannelIds}) = _$ChannelsViewStateImpl;
+      required final Set<String> followedChannelIds,
+      final bool isLoadingMore,
+      final bool hasMore}) = _$ChannelsViewStateImpl;
   const _ChannelsViewState._() : super._();
 
   @override
   List<ChannelDto> get channels;
   @override
   Set<String> get followedChannelIds;
+  @override
+  bool get isLoadingMore;
+  @override
+  bool get hasMore;
   @override
   @JsonKey(ignore: true)
   _$$ChannelsViewStateImplCopyWith<_$ChannelsViewStateImpl> get copyWith =>

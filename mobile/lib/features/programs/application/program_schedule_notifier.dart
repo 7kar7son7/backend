@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../channels/data/channel_api.dart';
 import '../../follows/data/follow_api.dart';
 import '../../follows/data/follow_dto.dart';
 import '../data/program_api.dart';
@@ -11,18 +10,16 @@ import 'program_schedule_state.dart';
 class ProgramScheduleNotifier
     extends AutoDisposeAsyncNotifier<ProgramScheduleState> {
   late final ProgramApi _programApi;
-  late final ChannelApi _channelApi;
   late final FollowApi _followApi;
   Timer? _refreshTimer;
 
   @override
   Future<ProgramScheduleState> build() async {
     _programApi = ref.watch(programApiProvider);
-    _channelApi = ref.watch(channelApiProvider);
     _followApi = ref.watch(followApiProvider);
 
     final now = DateTime.now();
-    final result = await _loadForDate(DateTime(now.year, now.month, now.day));
+    final result = await _loadForDate(DateTime(now.year, now.month, now.day), limit: 20, offset: 0);
     _restartAutoRefresh();
     ref.onDispose(() {
       _refreshTimer?.cancel();
@@ -32,32 +29,45 @@ class ProgramScheduleNotifier
 
   Future<void> changeDay(DateTime day) async {
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _loadForDate(day));
+    state = await AsyncValue.guard(() => _loadForDate(day, limit: 20, offset: 0));
     _restartAutoRefresh();
   }
 
   Future<void> toggleFollowChannel(String channelId, bool follow) async {
-    if (follow) {
-      await _followApi.follow(
-        FollowRequest(type: FollowTypeDto.CHANNEL, targetId: channelId),
-      );
-    } else {
-      await _followApi.unfollow(
-        FollowRequest(type: FollowTypeDto.CHANNEL, targetId: channelId),
-      );
-    }
+    try {
+      if (follow) {
+        await _followApi.follow(
+          FollowRequest(type: FollowTypeDto.CHANNEL, targetId: channelId),
+        );
+      } else {
+        await _followApi.unfollow(
+          FollowRequest(type: FollowTypeDto.CHANNEL, targetId: channelId),
+        );
+      }
 
-    final current = state.value;
-    if (current != null) {
-      final refreshed = await _loadForDate(current.selectedDate);
-      state = AsyncValue.data(refreshed);
+      // Odśwież dane po zmianie follow/unfollow
+      final current = state.value;
+      if (current != null) {
+        state = await AsyncValue.guard(() => _loadForDate(current.selectedDate));
+      }
+      _restartAutoRefresh();
+    } catch (error) {
+      // Jeśli wystąpi błąd, zachowaj poprzedni stan
+      // Błąd zostanie zalogowany przez Riverpod
+      final current = state.value;
+      if (current != null) {
+        state = AsyncValue.data(current);
+      }
     }
-    _restartAutoRefresh();
   }
 
-  Future<ProgramScheduleState> _loadForDate(DateTime day) async {
-    final programsResp = await _programApi.getProgramsForDay(day);
-    final channelsResp = await _channelApi.getChannels();
+  Future<ProgramScheduleState> _loadForDate(DateTime day, {int limit = 20, int offset = 0}) async {
+    // Pobierz programy i follows równolegle (nie czekamy na kanały - nie są już potrzebne!)
+    final programsResp = await _programApi.getProgramsForDay(
+      day,
+      limit: limit,
+      offset: offset,
+    );
     final followsResp = await _followApi.getFollows();
     final followedChannelIds = followsResp.data
         .where((f) => f.type == FollowTypeDto.CHANNEL)
@@ -65,30 +75,49 @@ class ProgramScheduleNotifier
         .whereType<String>()
         .toSet();
 
-    final channelById = {
-      for (final channel in channelsResp.data) channel.id: channel,
-    };
-
+    // Używamy channelLogoUrl z API - nie trzeba już pobierać kanałów osobno!
     final scheduled = programsResp.data.map((program) {
-      final channel = channelById[program.channelId];
       return ScheduledProgram(
         channelId: program.channelId,
-        channelName: channel?.name ?? program.channelName,
-        channelLogoUrl: channel?.logoUrl,
+        channelName: program.channelName,
+        channelLogoUrl: program.channelLogoUrl,
         program: program,
         isFollowed: followedChannelIds.contains(program.channelId),
       );
-    }).toList()
-      ..sort(
-        (a, b) =>
-            a.program.startsAt.compareTo(b.program.startsAt),
-      );
+    }).toList();
+    // Sortowanie nie jest już potrzebne - backend zwraca już posortowane programy
 
     return ProgramScheduleState(
       selectedDate: DateTime(day.year, day.month, day.day),
       programs: scheduled,
       hasChannelFollows: followedChannelIds.isNotEmpty,
+      hasMore: programsResp.data.length == limit, // Jeśli zwrócono tyle ile limit, może być więcej
     );
+  }
+
+  Future<void> loadMore() async {
+    final current = state.value;
+    if (current == null || current.isLoadingMore || !current.hasMore) return;
+
+    // Nie zmieniaj stanu na loading - ładuj w tle, żeby nie blokować UI
+    try {
+      final newPrograms = await _loadForDate(
+        current.selectedDate,
+        limit: 10,
+        offset: current.programs.length,
+      );
+      
+      final updated = current.copyWith(
+        programs: [...current.programs, ...newPrograms.programs],
+        hasMore: newPrograms.hasMore,
+        isLoadingMore: false,
+      );
+      
+      state = AsyncValue.data(updated);
+    } catch (error) {
+      // W przypadku błędu, po prostu nie aktualizuj - użytkownik może spróbować ponownie
+      state = AsyncValue.data(current.copyWith(isLoadingMore: false));
+    }
   }
 
   void _restartAutoRefresh() {

@@ -9,6 +9,8 @@ class ChannelsViewState with _$ChannelsViewState {
   const factory ChannelsViewState({
     required List<ChannelDto> channels,
     required Set<String> followedChannelIds,
+    @Default(false) bool isLoadingMore,
+    @Default(false) bool hasMore,
   }) = _ChannelsViewState;
 
   const ChannelsViewState._();

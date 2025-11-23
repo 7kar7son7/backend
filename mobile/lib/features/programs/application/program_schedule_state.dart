@@ -21,5 +21,7 @@ class ProgramScheduleState with _$ProgramScheduleState {
     required DateTime selectedDate,
     required List<ScheduledProgram> programs,
     required bool hasChannelFollows,
+    @Default(false) bool isLoadingMore,
+    @Default(false) bool hasMore,
   }) = _ProgramScheduleState;
 }

@@ -37,8 +37,12 @@ class ChannelsNotifier extends AutoDisposeAsyncNotifier<ChannelsViewState> {
     return newState;
   }
 
-  Future<ChannelsViewState> _fetchData() async {
-    final channelsResp = await _channelApi.getChannels(includePrograms: true);
+  Future<ChannelsViewState> _fetchData({int limit = 20, int offset = 0}) async {
+    final channelsResp = await _channelApi.getChannels(
+      includePrograms: true,
+      limit: limit,
+      offset: offset,
+    );
     final followsResp = await _followApi.getFollows();
 
     final followedChannelIds = followsResp.data
@@ -50,7 +54,33 @@ class ChannelsNotifier extends AutoDisposeAsyncNotifier<ChannelsViewState> {
     return ChannelsViewState(
       channels: channelsResp.data,
       followedChannelIds: followedChannelIds,
+      hasMore: channelsResp.data.length == limit, // Jeśli zwrócono tyle ile limit, może być więcej
     );
+  }
+
+  Future<void> loadMore() async {
+    final current = state.value;
+    if (current == null || current.isLoadingMore || !current.hasMore) return;
+
+    state = AsyncValue.data(current.copyWith(isLoadingMore: true));
+    
+    try {
+      final newChannels = await _fetchData(
+        limit: 10,
+        offset: current.channels.length,
+      );
+      
+      final updated = current.copyWith(
+        channels: [...current.channels, ...newChannels.channels],
+        hasMore: newChannels.hasMore,
+        isLoadingMore: false,
+      );
+      
+      state = AsyncValue.data(updated);
+    } catch (error) {
+      state = AsyncValue.data(current.copyWith(isLoadingMore: false));
+      rethrow;
+    }
   }
 }
 

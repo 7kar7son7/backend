@@ -19,6 +19,8 @@ abstract class ChannelApi {
   Future<ApiResponse<List<ChannelDto>>> getChannels({
     @Query('search') String? search,
     @Query('includePrograms') bool? includePrograms,
+    @Query('limit') int? limit,
+    @Query('offset') int? offset,
   });
 
   @GET('/channels/{channelId}')

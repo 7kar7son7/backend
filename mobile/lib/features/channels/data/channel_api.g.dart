@@ -46,11 +46,15 @@ class _ChannelApi implements ChannelApi {
   Future<ApiResponse<List<ChannelDto>>> getChannels({
     String? search,
     bool? includePrograms,
+    int? limit,
+    int? offset,
   }) async {
     final _extra = <String, dynamic>{};
     final queryParameters = <String, dynamic>{
       r'search': search,
       r'includePrograms': includePrograms,
+      r'limit': limit,
+      r'offset': offset,
     };
     queryParameters.removeWhere((k, v) => v == null);
     final _headers = <String, dynamic>{};

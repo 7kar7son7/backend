@@ -3,18 +3,21 @@ import { Prisma, PrismaClient } from '@prisma/client';
 export class ChannelService {
   constructor(private readonly prisma: PrismaClient) {}
 
-  listChannels(params: { search?: string; includePrograms?: boolean }) {
-    const { search, includePrograms } = params;
+  listChannels(params: { search?: string; includePrograms?: boolean; limit?: number; offset?: number }) {
+    const { search, includePrograms, limit, offset } = params;
 
     const include: Prisma.ChannelInclude | undefined =
       includePrograms === true
         ? {
             programs: {
               where: {
-                startsAt: { gte: new Date() },
+                startsAt: {
+                  gte: new Date(),
+                  lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 dni do przodu
+                },
               },
               orderBy: { startsAt: Prisma.SortOrder.asc },
-              take: 20,
+              // Pokazujemy wszystkie programy na najbliższe 7 dni
             },
           }
         : undefined;
@@ -33,6 +36,8 @@ export class ChannelService {
       orderBy: { name: Prisma.SortOrder.asc },
       ...(where ? { where } : {}),
       ...(include ? { include } : {}),
+      ...(limit !== undefined ? { take: limit } : {}),
+      ...(offset !== undefined ? { skip: offset } : {}),
     });
   }
 

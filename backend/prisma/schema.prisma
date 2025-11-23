@@ -42,6 +42,8 @@ model Program {
   channel        Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
   @@index([channelId, startsAt])
+  @@index([endsAt])
+  @@index([startsAt])
   @@map("programs")
 }
 

@@ -24,6 +24,7 @@ mixin _$ProgramDto {
   String get title => throw _privateConstructorUsedError;
   String get channelId => throw _privateConstructorUsedError;
   String get channelName => throw _privateConstructorUsedError;
+  String? get channelLogoUrl => throw _privateConstructorUsedError;
   String? get description => throw _privateConstructorUsedError;
   int? get seasonNumber => throw _privateConstructorUsedError;
   int? get episodeNumber => throw _privateConstructorUsedError;
@@ -49,6 +50,7 @@ abstract class $ProgramDtoCopyWith<$Res> {
       String title,
       String channelId,
       String channelName,
+      String? channelLogoUrl,
       String? description,
       int? seasonNumber,
       int? episodeNumber,
@@ -75,6 +77,7 @@ class _$ProgramDtoCopyWithImpl<$Res, $Val extends ProgramDto>
     Object? title = null,
     Object? channelId = null,
     Object? channelName = null,
+    Object? channelLogoUrl = freezed,
     Object? description = freezed,
     Object? seasonNumber = freezed,
     Object? episodeNumber = freezed,
@@ -100,6 +103,10 @@ class _$ProgramDtoCopyWithImpl<$Res, $Val extends ProgramDto>
           ? _value.channelName
           : channelName // ignore: cast_nullable_to_non_nullable
               as String,
+      channelLogoUrl: freezed == channelLogoUrl
+          ? _value.channelLogoUrl
+          : channelLogoUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
       description: freezed == description
           ? _value.description
           : description // ignore: cast_nullable_to_non_nullable
@@ -145,6 +152,7 @@ abstract class _$$ProgramDtoImplCopyWith<$Res>
       String title,
       String channelId,
       String channelName,
+      String? channelLogoUrl,
       String? description,
       int? seasonNumber,
       int? episodeNumber,
@@ -169,6 +177,7 @@ class __$$ProgramDtoImplCopyWithImpl<$Res>
     Object? title = null,
     Object? channelId = null,
     Object? channelName = null,
+    Object? channelLogoUrl = freezed,
     Object? description = freezed,
     Object? seasonNumber = freezed,
     Object? episodeNumber = freezed,
@@ -194,6 +203,10 @@ class __$$ProgramDtoImplCopyWithImpl<$Res>
           ? _value.channelName
           : channelName // ignore: cast_nullable_to_non_nullable
               as String,
+      channelLogoUrl: freezed == channelLogoUrl
+          ? _value.channelLogoUrl
+          : channelLogoUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
       description: freezed == description
           ? _value.description
           : description // ignore: cast_nullable_to_non_nullable
@@ -234,6 +247,7 @@ class _$ProgramDtoImpl implements _ProgramDto {
       required this.title,
       required this.channelId,
       required this.channelName,
+      this.channelLogoUrl,
       this.description,
       this.seasonNumber,
       this.episodeNumber,
@@ -254,6 +268,8 @@ class _$ProgramDtoImpl implements _ProgramDto {
   final String channelId;
   @override
   final String channelName;
+  @override
+  final String? channelLogoUrl;
   @override
   final String? description;
   @override
@@ -277,7 +293,7 @@ class _$ProgramDtoImpl implements _ProgramDto {
 
   @override
   String toString() {
-    return 'ProgramDto(id: $id, title: $title, channelId: $channelId, channelName: $channelName, description: $description, seasonNumber: $seasonNumber, episodeNumber: $episodeNumber, startsAt: $startsAt, endsAt: $endsAt, imageUrl: $imageUrl, tags: $tags)';
+    return 'ProgramDto(id: $id, title: $title, channelId: $channelId, channelName: $channelName, channelLogoUrl: $channelLogoUrl, description: $description, seasonNumber: $seasonNumber, episodeNumber: $episodeNumber, startsAt: $startsAt, endsAt: $endsAt, imageUrl: $imageUrl, tags: $tags)';
   }
 
   @override
@@ -291,6 +307,8 @@ class _$ProgramDtoImpl implements _ProgramDto {
                 other.channelId == channelId) &&
             (identical(other.channelName, channelName) ||
                 other.channelName == channelName) &&
+            (identical(other.channelLogoUrl, channelLogoUrl) ||
+                other.channelLogoUrl == channelLogoUrl) &&
             (identical(other.description, description) ||
                 other.description == description) &&
             (identical(other.seasonNumber, seasonNumber) ||
@@ -313,6 +331,7 @@ class _$ProgramDtoImpl implements _ProgramDto {
       title,
       channelId,
       channelName,
+      channelLogoUrl,
       description,
       seasonNumber,
       episodeNumber,
@@ -341,6 +360,7 @@ abstract class _ProgramDto implements ProgramDto {
       required final String title,
       required final String channelId,
       required final String channelName,
+      final String? channelLogoUrl,
       final String? description,
       final int? seasonNumber,
       final int? episodeNumber,
@@ -360,6 +380,8 @@ abstract class _ProgramDto implements ProgramDto {
   String get channelId;
   @override
   String get channelName;
+  @override
+  String? get channelLogoUrl;
   @override
   String? get description;
   @override

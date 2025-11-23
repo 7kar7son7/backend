@@ -14,8 +14,10 @@ abstract class ProgramApi {
 
   @GET('/programs/day')
   Future<ApiResponse<List<ProgramDto>>> getProgramsForDay(
-    @Query('date') DateTime date,
-  );
+    @Query('date') DateTime? date, {
+    @Query('limit') int? limit,
+    @Query('offset') int? offset,
+  });
 }
 
 final programApiProvider = Provider.autoDispose<ProgramApi>((ref) {

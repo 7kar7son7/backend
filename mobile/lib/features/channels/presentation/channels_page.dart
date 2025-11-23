@@ -21,12 +21,28 @@ class ChannelsPage extends ConsumerStatefulWidget {
 
 class _ChannelsPageState extends ConsumerState<ChannelsPage> {
   final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
   String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent * 0.8) {
+      // Załaduj więcej gdy użytkownik jest 80% w dół
+      final notifier = ref.read(channelsNotifierProvider.notifier);
+      notifier.loadMore();
+    }
   }
 
   @override
@@ -58,6 +74,7 @@ class _ChannelsPageState extends ConsumerState<ChannelsPage> {
               onRefresh: () => ref.read(channelsNotifierProvider.notifier).refresh(),
               edgeOffset: 120,
               child: CustomScrollView(
+                controller: _scrollController,
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                 slivers: [
                   SliverToBoxAdapter(
@@ -95,6 +112,18 @@ class _ChannelsPageState extends ConsumerState<ChannelsPage> {
                     sliver: SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
+                          // Jeśli to ostatni element i ładujemy więcej, pokaż loader
+                          if (index == filteredChannels.length && viewState.isLoadingMore) {
+                            return const Padding(
+                              padding: EdgeInsets.all(20),
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          }
+                          
+                          if (index >= filteredChannels.length) {
+                            return const SizedBox.shrink();
+                          }
+                          
                           final channel = filteredChannels[index];
                           final isFollowed = viewState.followedChannelIds.contains(channel.id);
                           final showAd = (index + 1) % 5 == 0 && _searchQuery.isEmpty;
@@ -121,7 +150,7 @@ class _ChannelsPageState extends ConsumerState<ChannelsPage> {
                             ],
                           );
                         },
-                        childCount: filteredChannels.length,
+                        childCount: filteredChannels.length + (viewState.isLoadingMore ? 1 : 0),
                       ),
                     ),
                   ),

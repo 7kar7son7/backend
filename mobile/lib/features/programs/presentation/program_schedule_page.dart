@@ -19,12 +19,33 @@ class ProgramSchedulePage extends ConsumerStatefulWidget {
 
 class _ProgramSchedulePageState extends ConsumerState<ProgramSchedulePage> {
   final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
   String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    // Ładuj więcej gdy użytkownik jest 50% w dół - wcześniej i w tle
+    if (_scrollController.hasClients && 
+        _scrollController.position.pixels >= _scrollController.position.maxScrollExtent * 0.5) {
+      final notifier = ref.read(programScheduleNotifierProvider.notifier);
+      final currentState = ref.read(programScheduleNotifierProvider).value;
+      // Ładuj tylko jeśli nie ładuje się już i są jeszcze programy do załadowania
+      if (currentState != null && !currentState.isLoadingMore && currentState.hasMore) {
+        notifier.loadMore();
+      }
+    }
   }
 
   @override
@@ -51,7 +72,15 @@ class _ProgramSchedulePageState extends ConsumerState<ProgramSchedulePage> {
             }
 
             if (_searchQuery.isNotEmpty && filteredPrograms.isEmpty) {
-              return _EmptySearchView(searchQuery: _searchQuery);
+              return _EmptySearchView(
+                searchQuery: _searchQuery,
+                onClear: () {
+                  setState(() {
+                    _searchQuery = '';
+                    _searchController.clear();
+                  });
+                },
+              );
             }
 
             return RefreshIndicator.adaptive(
@@ -60,6 +89,7 @@ class _ProgramSchedulePageState extends ConsumerState<ProgramSchedulePage> {
                   .read(programScheduleNotifierProvider.notifier)
                   .changeDay(data.selectedDate),
               child: CustomScrollView(
+                controller: _scrollController,
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                 slivers: [
                   SliverToBoxAdapter(
@@ -97,17 +127,73 @@ class _ProgramSchedulePageState extends ConsumerState<ProgramSchedulePage> {
                     sliver: SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
+                          // Jeśli to ostatni element i są jeszcze programy do załadowania, pokaż subtelny loader
+                          if (index == filteredPrograms.length) {
+                            if (data.hasMore && !_searchQuery.isNotEmpty) {
+                              // Automatycznie załaduj więcej w tle (tylko jeśli nie ma wyszukiwania)
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                final notifier = ref.read(programScheduleNotifierProvider.notifier);
+                                final currentState = ref.read(programScheduleNotifierProvider).value;
+                                if (currentState != null && !currentState.isLoadingMore) {
+                                  notifier.loadMore();
+                                }
+                              });
+                              return const Padding(
+                                padding: EdgeInsets.all(20),
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                ),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          }
+                          
+                          if (index >= filteredPrograms.length) {
+                            return const SizedBox.shrink();
+                          }
+                          
                           final entry = filteredPrograms[index];
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 18),
                             child: _ProgramTile(
                               entry: entry,
-                              onFollowToggle: () => ref
-                                  .read(programScheduleNotifierProvider.notifier)
-                                  .toggleFollowChannel(
+                              onFollowToggle: () async {
+                                final notifier = ref.read(programScheduleNotifierProvider.notifier);
+                                try {
+                                  await notifier.toggleFollowChannel(
                                     entry.channelId,
                                     !entry.isFollowed,
-                                  ),
+                                  );
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          !entry.isFollowed
+                                              ? 'Zacząłeś śledzić ${entry.channelName}'
+                                              : 'Przestałeś śledzić ${entry.channelName}',
+                                        ),
+                                        duration: const Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                } catch (error) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Nie udało się ${!entry.isFollowed ? 'śledzić' : 'odśledzić'} kanału: $error',
+                                        ),
+                                        backgroundColor: Theme.of(context).colorScheme.error,
+                                        duration: const Duration(seconds: 3),
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
                               onCreateEvent: () => _showCreateEventDialog(
                                 context: context,
                                 onConfirm: () async {
@@ -118,7 +204,7 @@ class _ProgramSchedulePageState extends ConsumerState<ProgramSchedulePage> {
                             ),
                           );
                         },
-                        childCount: filteredPrograms.length,
+                        childCount: filteredPrograms.length + (data.hasMore && !_searchQuery.isNotEmpty ? 1 : 0),
                       ),
                     ),
                   ),
@@ -375,6 +461,7 @@ class _ProgramTile extends StatelessWidget {
 
   String _formatTimeRange(DateTime start, DateTime? end) {
     final formatter = DateFormat.Hm();
+    // Backend zwraca daty w UTC, konwertuj na lokalny czas urządzenia
     final startStr = formatter.format(start.toLocal());
     final endStr = end != null ? formatter.format(end.toLocal()) : '';
     return end != null ? '$startStr – $endStr' : startStr;
@@ -411,9 +498,13 @@ class _EmptyScheduleView extends StatelessWidget {
 }
 
 class _EmptySearchView extends StatelessWidget {
-  const _EmptySearchView({required this.searchQuery});
+  const _EmptySearchView({
+    required this.searchQuery,
+    required this.onClear,
+  });
 
   final String searchQuery;
+  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
@@ -439,6 +530,17 @@ class _EmptySearchView extends StatelessWidget {
               style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: onClear,
+              icon: const Icon(Icons.clear_rounded),
+              label: const Text('Wyczyść wyszukiwanie'),
+              style: FilledButton.styleFrom(
+                backgroundColor: theme.colorScheme.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
             ),
           ],
         ),

@@ -10,6 +10,7 @@ class ProgramDto with _$ProgramDto {
     required String title,
     required String channelId,
     required String channelName,
+    String? channelLogoUrl,
     String? description,
     int? seasonNumber,
     int? episodeNumber,

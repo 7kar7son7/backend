@@ -239,6 +239,8 @@ mixin _$ProgramScheduleState {
   DateTime get selectedDate => throw _privateConstructorUsedError;
   List<ScheduledProgram> get programs => throw _privateConstructorUsedError;
   bool get hasChannelFollows => throw _privateConstructorUsedError;
+  bool get isLoadingMore => throw _privateConstructorUsedError;
+  bool get hasMore => throw _privateConstructorUsedError;
 
   @JsonKey(ignore: true)
   $ProgramScheduleStateCopyWith<ProgramScheduleState> get copyWith =>
@@ -254,7 +256,9 @@ abstract class $ProgramScheduleStateCopyWith<$Res> {
   $Res call(
       {DateTime selectedDate,
       List<ScheduledProgram> programs,
-      bool hasChannelFollows});
+      bool hasChannelFollows,
+      bool isLoadingMore,
+      bool hasMore});
 }
 
 /// @nodoc
@@ -274,6 +278,8 @@ class _$ProgramScheduleStateCopyWithImpl<$Res,
     Object? selectedDate = null,
     Object? programs = null,
     Object? hasChannelFollows = null,
+    Object? isLoadingMore = null,
+    Object? hasMore = null,
   }) {
     return _then(_value.copyWith(
       selectedDate: null == selectedDate
@@ -287,6 +293,14 @@ class _$ProgramScheduleStateCopyWithImpl<$Res,
       hasChannelFollows: null == hasChannelFollows
           ? _value.hasChannelFollows
           : hasChannelFollows // ignore: cast_nullable_to_non_nullable
+              as bool,
+      isLoadingMore: null == isLoadingMore
+          ? _value.isLoadingMore
+          : isLoadingMore // ignore: cast_nullable_to_non_nullable
+              as bool,
+      hasMore: null == hasMore
+          ? _value.hasMore
+          : hasMore // ignore: cast_nullable_to_non_nullable
               as bool,
     ) as $Val);
   }
@@ -303,7 +317,9 @@ abstract class _$$ProgramScheduleStateImplCopyWith<$Res>
   $Res call(
       {DateTime selectedDate,
       List<ScheduledProgram> programs,
-      bool hasChannelFollows});
+      bool hasChannelFollows,
+      bool isLoadingMore,
+      bool hasMore});
 }
 
 /// @nodoc
@@ -320,6 +336,8 @@ class __$$ProgramScheduleStateImplCopyWithImpl<$Res>
     Object? selectedDate = null,
     Object? programs = null,
     Object? hasChannelFollows = null,
+    Object? isLoadingMore = null,
+    Object? hasMore = null,
   }) {
     return _then(_$ProgramScheduleStateImpl(
       selectedDate: null == selectedDate
@@ -334,6 +352,14 @@ class __$$ProgramScheduleStateImplCopyWithImpl<$Res>
           ? _value.hasChannelFollows
           : hasChannelFollows // ignore: cast_nullable_to_non_nullable
               as bool,
+      isLoadingMore: null == isLoadingMore
+          ? _value.isLoadingMore
+          : isLoadingMore // ignore: cast_nullable_to_non_nullable
+              as bool,
+      hasMore: null == hasMore
+          ? _value.hasMore
+          : hasMore // ignore: cast_nullable_to_non_nullable
+              as bool,
     ));
   }
 }
@@ -344,7 +370,9 @@ class _$ProgramScheduleStateImpl implements _ProgramScheduleState {
   const _$ProgramScheduleStateImpl(
       {required this.selectedDate,
       required final List<ScheduledProgram> programs,
-      required this.hasChannelFollows})
+      required this.hasChannelFollows,
+      this.isLoadingMore = false,
+      this.hasMore = false})
       : _programs = programs;
 
   @override
@@ -359,10 +387,16 @@ class _$ProgramScheduleStateImpl implements _ProgramScheduleState {
 
   @override
   final bool hasChannelFollows;
+  @override
+  @JsonKey()
+  final bool isLoadingMore;
+  @override
+  @JsonKey()
+  final bool hasMore;
 
   @override
   String toString() {
-    return 'ProgramScheduleState(selectedDate: $selectedDate, programs: $programs, hasChannelFollows: $hasChannelFollows)';
+    return 'ProgramScheduleState(selectedDate: $selectedDate, programs: $programs, hasChannelFollows: $hasChannelFollows, isLoadingMore: $isLoadingMore, hasMore: $hasMore)';
   }
 
   @override
@@ -374,12 +408,20 @@ class _$ProgramScheduleStateImpl implements _ProgramScheduleState {
                 other.selectedDate == selectedDate) &&
             const DeepCollectionEquality().equals(other._programs, _programs) &&
             (identical(other.hasChannelFollows, hasChannelFollows) ||
-                other.hasChannelFollows == hasChannelFollows));
+                other.hasChannelFollows == hasChannelFollows) &&
+            (identical(other.isLoadingMore, isLoadingMore) ||
+                other.isLoadingMore == isLoadingMore) &&
+            (identical(other.hasMore, hasMore) || other.hasMore == hasMore));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, selectedDate,
-      const DeepCollectionEquality().hash(_programs), hasChannelFollows);
+  int get hashCode => Object.hash(
+      runtimeType,
+      selectedDate,
+      const DeepCollectionEquality().hash(_programs),
+      hasChannelFollows,
+      isLoadingMore,
+      hasMore);
 
   @JsonKey(ignore: true)
   @override
@@ -394,7 +436,9 @@ abstract class _ProgramScheduleState implements ProgramScheduleState {
   const factory _ProgramScheduleState(
       {required final DateTime selectedDate,
       required final List<ScheduledProgram> programs,
-      required final bool hasChannelFollows}) = _$ProgramScheduleStateImpl;
+      required final bool hasChannelFollows,
+      final bool isLoadingMore,
+      final bool hasMore}) = _$ProgramScheduleStateImpl;
 
   @override
   DateTime get selectedDate;
@@ -402,6 +446,10 @@ abstract class _ProgramScheduleState implements ProgramScheduleState {
   List<ScheduledProgram> get programs;
   @override
   bool get hasChannelFollows;
+  @override
+  bool get isLoadingMore;
+  @override
+  bool get hasMore;
   @override
   @JsonKey(ignore: true)
   _$$ProgramScheduleStateImplCopyWith<_$ProgramScheduleStateImpl>
