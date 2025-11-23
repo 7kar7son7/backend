@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { DateTime } from 'luxon';
 
 const dayQuerySchema = z.object({
   date: z
@@ -44,6 +45,7 @@ export default async function programsRoutes(app: FastifyInstance) {
       const isToday = selectedDate.toDateString() === new Date().toDateString();
       const minTime = isToday ? now : startOfDay;
 
+      // Filtruj programy z kanałami bezpośrednio w zapytaniu - szybsze!
       const programs = await app.prisma.program.findMany({
         where: {
           AND: [
@@ -71,6 +73,12 @@ export default async function programsRoutes(app: FastifyInstance) {
                 gt: minTime,
               },
             },
+            // Tylko programy z kanałami (channel nie jest null)
+            {
+              channel: {
+                isNot: null,
+              },
+            },
           ],
         },
         include: {
@@ -79,38 +87,49 @@ export default async function programsRoutes(app: FastifyInstance) {
         orderBy: {
           startsAt: 'asc',
         },
+        take: 500, // Limit do 500 programów - wystarczy na cały dzień
       });
 
       app.log.info({
         totalPrograms: programs.length,
-        programsWithChannels: programs.filter((p) => p.channel != null).length,
         dateRange: { start: startOfDay.toISOString(), end: endOfDay.toISOString() },
       }, 'Found programs for day');
 
-      const filteredPrograms = programs.filter((program) => program.channel != null);
+      // Uproszczone sortowanie - tylko dla dzisiejszego dnia
+      // Dla innych dni po prostu zwracamy posortowane po startsAt (już z bazy)
+      let sortedPrograms = programs;
+      if (isToday) {
+        // Tylko dla dzisiejszego dnia: sortuj tak, aby aktualne programy były na górze
+        sortedPrograms = programs.sort((a, b) => {
+          const aStartsAt = a.startsAt.getTime();
+          const bStartsAt = b.startsAt.getTime();
+          const nowTime = now.getTime();
+          
+          const aIsPast = aStartsAt < nowTime;
+          const bIsPast = bStartsAt < nowTime;
+          
+          if (aIsPast && bIsPast) {
+            // Oba są w przeszłości - sortuj malejąco (najpóźniejsze wcześniejsze na górze)
+            return bStartsAt - aStartsAt;
+          } else if (!aIsPast && !bIsPast) {
+            // Oba są w przyszłości - sortuj rosnąco (najwcześniejsze późniejsze na dole)
+            return aStartsAt - bStartsAt;
+          } else {
+            // Jeden w przeszłości, jeden w przyszłości - przeszłość przed przyszłością
+            return aIsPast ? -1 : 1;
+          }
+        });
+      }
       
-      // Sortuj programy: najpierw wcześniejsze niż aktualna godzina (malejąco),
-      // potem późniejsze (rosnąco) - tak, aby aktualna godzina była "na górze"
-      // Używamy sortowania w pamięci, ale tylko dla programów z kanałami (już przefiltrowane)
-      const sortedPrograms = filteredPrograms.sort((a, b) => {
-        const aStartsAt = a.startsAt.getTime();
-        const bStartsAt = b.startsAt.getTime();
-        const nowTime = now.getTime();
-        
-        const aIsPast = aStartsAt < nowTime;
-        const bIsPast = bStartsAt < nowTime;
-        
-        if (aIsPast && bIsPast) {
-          // Oba są w przeszłości - sortuj malejąco (najpóźniejsze wcześniejsze na górze)
-          return bStartsAt - aStartsAt;
-        } else if (!aIsPast && !bIsPast) {
-          // Oba są w przyszłości - sortuj rosnąco (najwcześniejsze późniejsze na dole)
-          return aStartsAt - bStartsAt;
-        } else {
-          // Jeden w przeszłości, jeden w przyszłości - przeszłość przed przyszłością
-          return aIsPast ? -1 : 1;
-        }
-      });
+      // Konwertuj daty z UTC na lokalny czas (CET/CEST) dla Polski
+      // Daty w bazie są w UTC, ale powinny być wyświetlane w lokalnym czasie
+      const toLocalTime = (date: Date): string => {
+        // Konwertuj UTC na Europe/Warsaw (CET/CEST) używając luxon
+        const utcDate = DateTime.fromJSDate(date, { zone: 'utc' });
+        const localDate = utcDate.setZone('Europe/Warsaw');
+        // Zwróć jako ISO string z offsetem
+        return localDate.toISO() ?? date.toISOString();
+      };
       
       return {
         data: sortedPrograms.map((program) => ({
@@ -122,8 +141,8 @@ export default async function programsRoutes(app: FastifyInstance) {
             description: program.description,
             seasonNumber: program.seasonNumber,
             episodeNumber: program.episodeNumber,
-            startsAt: program.startsAt,
-            endsAt: program.endsAt,
+            startsAt: toLocalTime(program.startsAt),
+            endsAt: program.endsAt ? toLocalTime(program.endsAt) : null,
             imageUrl: program.imageUrl ?? program.channel?.logoUrl ?? null,
             tags: program.tags ?? [],
           })),
