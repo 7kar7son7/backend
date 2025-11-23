@@ -1,0 +1,103 @@
+# ============================================
+# ZMIENNE ŚRODOWISKOWE DLA PRODUKCJI (RAILWAY)
+# ============================================
+# Skopiuj te zmienne do Railway -> Variables -> Raw Editor
+# LUB dodaj każdą zmienną osobno przez "New Variable"
+#
+# WAŻNE: Zastąp wartości oznaczone jako "replace-with-..." własnymi wartościami!
+
+# ============================================
+# BAZA DANYCH
+# ============================================
+DATABASE_URL=postgresql://admin:changeme_secure_password@57.129.12.11:5432/branchly_6c216810_a503_49b6_8954_806696932549_main?sslmode=disable
+
+# ============================================
+# APLIKACJA
+# ============================================
+NODE_ENV=production
+PORT=3001
+HOST=0.0.0.0
+NODE_OPTIONS=--max-old-space-size=2048
+
+# ============================================
+# EPG - ŹRÓDŁO DANYCH PROGRAMOWYCH
+# ============================================
+# URL źródła EPG dla polskich kanałów
+# System automatycznie próbuje różnych źródeł jeśli główne nie działa
+# Możesz ustawić konkretne źródło lub zostawić puste (użyje automatycznego fallback)
+# EPG_SOURCE_URL=https://epg.ovh/plar.xml
+
+# Wyłącz grab (pobieranie lokalne) - używamy tylko URL
+EPG_GRAB_ENABLED=false
+
+# Maksymalna liczba kanałów do importu
+IPTV_ORG_MAX_CHANNELS=10000
+
+# Maksymalna liczba dni programów do przodu (7 dni = tydzień)
+IPTV_ORG_MAX_DAYS=7
+
+# Prefiksy dozwolonych kanałów (pl/ = polskie kanały)
+IPTV_ORG_ALLOWED_PREFIXES=pl/
+
+# Rozmiar chunka przy imporcie programów do bazy (50 = optymalne)
+EPG_IMPORT_CHUNK_SIZE=50
+
+# ============================================
+# AUTOMATYCZNY IMPORT EPG
+# ============================================
+# Włącz automatyczny import EPG
+EPG_AUTO_IMPORT_ENABLED=true
+
+# Harmonogram automatycznego importu (cron format)
+# 0 21 * * * = codziennie o 21:00 (po aktualizacji open-epg.com o 20:00 CET)
+# 0 3 * * * = codziennie o 3:00 rano (stary harmonogram)
+# 0 */6 * * * = co 6 godzin
+EPG_AUTO_IMPORT_SCHEDULE=0 21 * * *
+
+# Strefa czasowa dla harmonogramu
+EPG_AUTO_IMPORT_TIMEZONE=Europe/Warsaw
+
+# Uruchom import przy starcie serwera
+EPG_AUTO_IMPORT_RUN_ON_START=true
+
+# ============================================
+# WYBRANE KANAŁY (OPCJONALNE)
+# ============================================
+# PUSTE = importuje wszystkie polskie kanały (z prefiksem pl/)
+# Jeśli chcesz tylko wybrane kanały, ustaw tutaj listę oddzieloną przecinkami
+# Przykład: IPTV_ORG_SELECTED_IDS=pl/tvp1,pl/tvp2,pl/tvn
+# IPTV_ORG_SELECTED_IDS=
+
+# ============================================
+# CZYSZCZENIE STARYCH PROGRAMÓW
+# ============================================
+# Ile dni wstecz zostawić programy (domyślnie 1 dzień)
+# Programy starsze niż ten okres będą automatycznie usuwane
+EPG_PRUNE_MAX_AGE_DAYS=1
+
+# ============================================
+# POWIADOMIENIA
+# ============================================
+# Harmonogram codziennych przypomnień (cron format)
+# 0 11 * * * = codziennie o 11:00 rano
+DAILY_REMINDER_SCHEDULE=0 11 * * *
+
+# ============================================
+# BEZPIECZEŃSTWO
+# ============================================
+# ZASTĄP TYM WŁASNYM BEZPIECZNYM SEKRETEM!
+JWT_SECRET=replace-with-secure-secret-min-32-chars
+
+# Klucz serwera FCM do wysyłania powiadomień push
+# ZASTĄP TYM WŁASNYM KLUCZEM Z FIREBASE CONSOLE!
+FCM_SERVER_KEY=replace-with-fcm-server-key
+
+# ============================================
+# UWAGI
+# ============================================
+# 1. Zawsze zastąp wartości "replace-with-..." własnymi wartościami
+# 2. EPG_SOURCE_URL może wymagać zmiany jeśli źródło przestanie działać
+# 3. EPG_AUTO_IMPORT_SCHEDULE można zmienić na częstsze aktualizacje (np. co 6h)
+# 4. EPG_PRUNE_MAX_AGE_DAYS kontroluje ile dni historii programów trzymać w bazie
+# 5. IPTV_ORG_SELECTED_IDS pozostaw puste aby importować wszystkie polskie kanały
+
