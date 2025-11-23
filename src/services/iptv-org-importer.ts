@@ -816,9 +816,10 @@ function parseTimestamp(raw: string | undefined): Date | null {
     }
   }
 
-  // Ostatnia próba - bez offsetu, traktuj jako UTC
+  // Ostatnia próba - bez offsetu, traktuj jako lokalna strefa czasowa (CET/CEST dla Polski)
+  // Dla źródeł EPG z Polski (open-epg.com, epg.ovh) daty bez offsetu są w CET/CEST
   const withoutOffset = trimmed.split(' ')[0] ?? trimmed.split('+')[0] ?? trimmed.split('-')[0] ?? trimmed;
-  const dt = DateTime.fromFormat(withoutOffset, 'yyyyLLddHHmmss', { zone: 'UTC' });
+  const dt = DateTime.fromFormat(withoutOffset, 'yyyyLLddHHmmss', { zone: 'Europe/Warsaw' });
   
   return dt.isValid ? dt.toUTC().toJSDate() : null;
 }
