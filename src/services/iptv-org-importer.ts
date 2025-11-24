@@ -324,6 +324,7 @@ export async function importIptvOrgEpg(
   
   logger.info(`🔄 Przetwarzam ${channelNodes.length} kanałów z XML...`);
   const logoMap = await loadLogoMap(logger);
+  logger.info(`📸 Załadowano ${logoMap.size} logotypów z pliku logos.json`);
   const allowedSlugs = await loadAllowedChannelSlugs(logger);
 
   for (const channel of channelNodes) {
@@ -345,7 +346,7 @@ export async function importIptvOrgEpg(
     const directLogo = pickIcon(channel.icon);
     const enrichedLogo =
       directLogo ??
-      findLogoForChannel(logoMap, channel['@_id'], name);
+      findLogoForChannel(logoMap, channel['@_id'], name, logger, verbose);
 
     // Sprawdź czy kanał jest na liście polskich stacji (jeśli lista istnieje)
     // Dla epg.ovh i open-epg.com ignorujemy allowedSlugs - wszystkie kanały są polskie
@@ -958,36 +959,89 @@ function findLogoForChannel(
   map: Map<string, string>,
   channelId: string,
   channelName: string | undefined,
+  logger?: FastifyBaseLogger,
+  verbose?: boolean,
 ) {
   const candidates = new Set<string>();
 
-  // Dla kanałów z open-epg.com i epg.ovh ID może być np. "TVP 1.pl" - usuń .pl
+  // 1. Próbuj z pełnym ID (z .pl i bez)
   const cleanId = channelId.replace(/\.pl$/, '');
-  const idSlug = slugify(cleanId.split('#')[1] ?? cleanId);
-  if (idSlug) {
-    candidates.add(idSlug);
-    candidates.add(ensureSuffix(idSlug, 'pl'));
+  const idParts = cleanId.split(/[#\/]/);
+  for (const part of idParts) {
+    if (!part) continue;
+    const partSlug = slugify(part);
+    if (partSlug) {
+      candidates.add(partSlug);
+      candidates.add(ensureSuffix(partSlug, 'pl'));
+    }
   }
 
-  // Dla nazwy też usuń .pl jeśli jest
-  const cleanName = (channelName ?? '').replace(/\.pl$/, '');
-  const nameSlug = slugify(cleanName);
-  if (nameSlug) {
-    candidates.add(nameSlug);
-    candidates.add(ensureSuffix(nameSlug, 'pl'));
+  // 2. Próbuj z pełnym ID (z .pl)
+  const fullIdSlug = slugify(channelId);
+  if (fullIdSlug) {
+    candidates.add(fullIdSlug);
   }
 
-  // Spróbuj też z .pl na końcu (dla kanałów które mają .pl w nazwie w logos.json)
-  if (nameSlug) {
-    candidates.add(`${nameSlug}pl`);
+  // 3. Próbuj z nazwą kanału (z .pl i bez)
+  if (channelName) {
+    const cleanName = channelName.replace(/\.pl$/, '');
+    const nameSlug = slugify(cleanName);
+    if (nameSlug) {
+      candidates.add(nameSlug);
+      candidates.add(ensureSuffix(nameSlug, 'pl'));
+      // Dodatkowe warianty dla nazwy
+      candidates.add(`${nameSlug}pl`);
+    }
+    
+    // Próbuj też z pełną nazwą (z .pl)
+    const fullNameSlug = slugify(channelName);
+    if (fullNameSlug) {
+      candidates.add(fullNameSlug);
+    }
   }
 
+  // 4. Próbuj z częścią po / (dla kanałów typu "pl/tvp1")
+  if (channelId.includes('/')) {
+    const afterSlash = channelId.split('/').pop();
+    if (afterSlash) {
+      const afterSlashClean = afterSlash.replace(/\.pl$/, '');
+      const afterSlashSlug = slugify(afterSlashClean);
+      if (afterSlashSlug) {
+        candidates.add(afterSlashSlug);
+        candidates.add(ensureSuffix(afterSlashSlug, 'pl'));
+      }
+    }
+  }
+
+  // 5. Próbuj z częścią po # (dla kanałów typu "pl/tvp1#tvp1")
+  if (channelId.includes('#')) {
+    const afterHash = channelId.split('#').pop();
+    if (afterHash) {
+      const afterHashClean = afterHash.replace(/\.pl$/, '');
+      const afterHashSlug = slugify(afterHashClean);
+      if (afterHashSlug) {
+        candidates.add(afterHashSlug);
+        candidates.add(ensureSuffix(afterHashSlug, 'pl'));
+      }
+    }
+  }
+
+  // 6. Przeszukaj mapę - sprawdź wszystkie kandydatów
   for (const slug of candidates) {
+    if (!slug) continue;
     const candidate = map.get(slug);
     if (candidate) {
+      if (verbose && logger) {
+        logger.debug(`✅ Znaleziono logo dla ${channelId} (${channelName}): ${slug} -> ${candidate}`);
+      }
       return candidate;
     }
   }
+
+  if (verbose && logger && candidates.size > 0) {
+    logger.debug(`❌ Nie znaleziono logo dla ${channelId} (${channelName}). Próbowano: ${Array.from(candidates).slice(0, 5).join(', ')}${candidates.size > 5 ? '...' : ''}`);
+  }
+
   return undefined;
 }
 
