@@ -68,6 +68,18 @@ class ProgramScheduleNotifier
       limit: limit,
       offset: offset,
     );
+    
+    // Debug: sprawdź czy otrzymaliśmy programy
+    if (programsResp.data.isEmpty) {
+      // Jeśli nie ma programów, zwróć pusty stan
+      return ProgramScheduleState(
+        selectedDate: DateTime(day.year, day.month, day.day),
+        programs: [],
+        hasChannelFollows: false,
+        hasMore: false,
+      );
+    }
+    
     final followsResp = await _followApi.getFollows();
     final followedChannelIds = followsResp.data
         .where((f) => f.type == FollowTypeDto.CHANNEL)
@@ -99,7 +111,9 @@ class ProgramScheduleNotifier
     final current = state.value;
     if (current == null || current.isLoadingMore || !current.hasMore) return;
 
-    // Nie zmieniaj stanu na loading - ładuj w tle, żeby nie blokować UI
+    // Ustaw isLoadingMore na true przed rozpoczęciem ładowania
+    state = AsyncValue.data(current.copyWith(isLoadingMore: true));
+
     try {
       final newPrograms = await _loadForDate(
         current.selectedDate,

@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -60,13 +61,34 @@ class _ProgramSchedulePageState extends ConsumerState<ProgramSchedulePage> {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, stackTrace) {
             String userFriendlyMessage = 'Nie udało się pobrać programu';
-            if (error.toString().contains('502') || error.toString().contains('503') || error.toString().contains('504')) {
-              userFriendlyMessage = 'Serwer jest tymczasowo niedostępny. Spróbuj ponownie za chwilę.';
-            } else if (error.toString().contains('timeout') || error.toString().contains('Timeout')) {
-              userFriendlyMessage = 'Przekroczono limit czasu połączenia. Sprawdź połączenie internetowe.';
-            } else if (error.toString().contains('SocketException') || error.toString().contains('Network')) {
-              userFriendlyMessage = 'Brak połączenia z internetem. Sprawdź połączenie sieciowe.';
+            
+            // Sprawdź czy to DioException i wyciągnij statusCode
+            if (error is DioException) {
+              final statusCode = error.response?.statusCode;
+              if (statusCode == 502 || statusCode == 503 || statusCode == 504) {
+                userFriendlyMessage = 'Serwer jest tymczasowo niedostępny. Spróbuj ponownie za chwilę.';
+              } else if (error.type == DioExceptionType.connectionTimeout ||
+                         error.type == DioExceptionType.receiveTimeout ||
+                         error.type == DioExceptionType.sendTimeout) {
+                userFriendlyMessage = 'Przekroczono limit czasu połączenia. Sprawdź połączenie internetowe.';
+              } else if (error.type == DioExceptionType.connectionError ||
+                         error.type == DioExceptionType.unknown) {
+                userFriendlyMessage = 'Brak połączenia z internetem. Sprawdź połączenie sieciowe.';
+              } else if (statusCode != null) {
+                userFriendlyMessage = 'Błąd serwera (kod $statusCode). Spróbuj ponownie za chwilę.';
+              }
+            } else {
+              // Fallback dla innych typów błędów
+              final errorStr = error.toString();
+              if (errorStr.contains('502') || errorStr.contains('503') || errorStr.contains('504')) {
+                userFriendlyMessage = 'Serwer jest tymczasowo niedostępny. Spróbuj ponownie za chwilę.';
+              } else if (errorStr.contains('timeout') || errorStr.contains('Timeout')) {
+                userFriendlyMessage = 'Przekroczono limit czasu połączenia. Sprawdź połączenie internetowe.';
+              } else if (errorStr.contains('SocketException') || errorStr.contains('Network')) {
+                userFriendlyMessage = 'Brak połączenia z internetem. Sprawdź połączenie sieciowe.';
+              }
             }
+            
             return _ErrorView(
               message: userFriendlyMessage,
               onRetry: () => ref
