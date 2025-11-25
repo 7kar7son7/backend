@@ -62,14 +62,23 @@ export class EpgImportService {
         select: { logoUrl: true },
       });
 
+      // WAŻNE: Zachowaj istniejący logotyp jeśli nowy nie jest dostępny
+      // To zapobiega znikaniu logotypów podczas automatycznych importów EPG
+      const finalLogoUrl = channel.logo ?? existingChannel?.logoUrl ?? null;
+      
+      if (existingChannel?.logoUrl && !channel.logo) {
+        this.logger.debug(
+          `Zachowuję istniejący logotyp dla ${channel.name}: ${existingChannel.logoUrl}`,
+        );
+      }
+
       const channelRecord = await this.prisma.channel.upsert({
         where: { externalId: channel.id },
         update: {
           name: channel.name,
           category: channel.category ?? null,
           description: channel.description ?? null,
-          // Zachowaj istniejący logotyp jeśli nowy nie jest dostępny
-          logoUrl: channel.logo ?? existingChannel?.logoUrl ?? null,
+          logoUrl: finalLogoUrl,
           countryCode: channel.countryCode ?? null,
         },
         create: {
