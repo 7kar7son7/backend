@@ -56,13 +56,20 @@ export class EpgImportService {
         `Import kanału ${index + 1}/${totalChannels}: ${channel.name} (${channel.programs?.length ?? 0} programów)`,
       );
 
+      // Pobierz istniejący kanał, żeby zachować logotyp jeśli nowy nie jest dostępny
+      const existingChannel = await this.prisma.channel.findUnique({
+        where: { externalId: channel.id },
+        select: { logoUrl: true },
+      });
+
       const channelRecord = await this.prisma.channel.upsert({
         where: { externalId: channel.id },
         update: {
           name: channel.name,
           category: channel.category ?? null,
           description: channel.description ?? null,
-          logoUrl: channel.logo ?? null,
+          // Zachowaj istniejący logotyp jeśli nowy nie jest dostępny
+          logoUrl: channel.logo ?? existingChannel?.logoUrl ?? null,
           countryCode: channel.countryCode ?? null,
         },
         create: {
