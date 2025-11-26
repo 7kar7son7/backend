@@ -120,33 +120,42 @@ export default async function channelsRoutes(app: FastifyInstance) {
       filter.to = query.to;
     }
 
-    const programs = await programService.listUpcomingByChannel(
-      params.channelId,
-      filter,
-    );
+    try {
+      const programs = await programService.listUpcomingByChannel(
+        params.channelId,
+        filter,
+      );
 
-    // Formatuj programy w takim samym formacie jak /programs/day
-    const formattedPrograms = programs.map((program) => ({
-      id: program.id,
-      title: program.title,
-      channelId: program.channelId,
-      channelName: channel.name,
-      channelLogoUrl: channel.logoUrl ?? null,
-      description: program.description,
-      seasonNumber: program.seasonNumber,
-      episodeNumber: program.episodeNumber,
-      startsAt: program.startsAt,
-      endsAt: program.endsAt,
-      imageUrl: program.imageUrl ?? channel.logoUrl ?? null,
-      tags: program.tags ?? [],
-    }));
+      // Formatuj programy w takim samym formacie jak /programs/day
+      const formattedPrograms = programs.map((program) => ({
+        id: program.id,
+        title: program.title,
+        channelId: program.channelId,
+        channelName: channel.name,
+        channelLogoUrl: channel.logoUrl ?? null,
+        description: program.description,
+        seasonNumber: program.seasonNumber,
+        episodeNumber: program.episodeNumber,
+        startsAt: program.startsAt,
+        endsAt: program.endsAt,
+        imageUrl: program.imageUrl ?? channel.logoUrl ?? null,
+        tags: program.tags ?? [],
+      }));
 
-    return {
-      data: {
-        channel,
-        programs: formattedPrograms,
-      },
-    };
+      return {
+        data: {
+          channel,
+          programs: formattedPrograms,
+        },
+      };
+    } catch (error) {
+      request.log.error(error, 'Failed to fetch channel programs');
+      return reply.code(500).send({
+        error: 'Failed to fetch channel programs',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+
   });
 }
 
