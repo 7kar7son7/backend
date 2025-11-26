@@ -11,15 +11,15 @@ export class ProgramService {
     };
 
     // Filtruj programy w zakresie dat
+    // Program musi być aktywny w zakresie [from, to]
+    // czyli: startsAt < to (program zaczyna się przed końcem zakresu)
+    //    i: endsAt > from (program kończy się po początku zakresu)
     if (from && to) {
-      // Jeśli podano oba, pokazuj programy które zaczynają się w tym zakresie
-      where.startsAt = {
-        gte: from,
-        lt: to,
-      };
+      where.startsAt = { lt: to };
+      where.endsAt = { gt: from };
     } else if (from) {
-      // Jeśli tylko 'from', pokazuj programy które się zaczynają od tego czasu
-      where.startsAt = { gte: from };
+      // Jeśli tylko 'from', pokazuj programy które jeszcze się nie zakończyły
+      where.endsAt = { gt: from };
     } else if (to) {
       // Jeśli tylko 'to', pokazuj programy które się zaczynają przed tym czasem
       where.startsAt = { lt: to };
@@ -31,6 +31,9 @@ export class ProgramService {
     return this.prisma.program.findMany({
       where,
       orderBy: { startsAt: Prisma.SortOrder.asc },
+      include: {
+        channel: true, // Dołącz dane kanału
+      },
     });
   }
 
