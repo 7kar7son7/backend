@@ -13,14 +13,15 @@ export class ProgramService {
     // Filtruj programy w zakresie dat
     // Program musi być aktywny w zakresie [from, to]
     // czyli: startsAt < to (program zaczyna się przed końcem zakresu)
-    //    i: endsAt > from LUB endsAt jest null (program kończy się po początku zakresu lub nie ma końca)
+    //    i: endsAt > from (program kończy się po początku zakresu)
     if (from && to) {
       where.AND = [
         { startsAt: { lt: to } },
         {
           OR: [
             { endsAt: { gt: from } },
-            { endsAt: { equals: null } },
+            // Dla programów bez endsAt (null) - traktuj je jako aktywne
+            { endsAt: null as any },
           ],
         },
       ];
@@ -28,7 +29,7 @@ export class ProgramService {
       // Jeśli tylko 'from', pokazuj programy które jeszcze się nie zakończyły
       where.OR = [
         { endsAt: { gt: from } },
-        { endsAt: { equals: null } },
+        { endsAt: null as any },
       ];
     } else if (to) {
       // Jeśli tylko 'to', pokazuj programy które się zaczynają przed tym czasem
@@ -38,7 +39,7 @@ export class ProgramService {
       const now = new Date();
       where.OR = [
         { endsAt: { gt: now } },
-        { endsAt: { equals: null } },
+        { endsAt: null as any },
       ];
     }
 
