@@ -15,16 +15,20 @@ export class ProgramService {
     // czyli: startsAt < to (program zaczyna się przed końcem zakresu)
     //    i: endsAt > from LUB endsAt jest null (program kończy się po początku zakresu lub nie ma końca)
     if (from && to) {
-      where.startsAt = { lt: to };
-      where.OR = [
-        { endsAt: { gt: from } },
-        { endsAt: null },
+      where.AND = [
+        { startsAt: { lt: to } },
+        {
+          OR: [
+            { endsAt: { gt: from } },
+            { endsAt: { equals: null } },
+          ],
+        },
       ];
     } else if (from) {
       // Jeśli tylko 'from', pokazuj programy które jeszcze się nie zakończyły
       where.OR = [
         { endsAt: { gt: from } },
-        { endsAt: null },
+        { endsAt: { equals: null } },
       ];
     } else if (to) {
       // Jeśli tylko 'to', pokazuj programy które się zaczynają przed tym czasem
@@ -34,7 +38,7 @@ export class ProgramService {
       const now = new Date();
       where.OR = [
         { endsAt: { gt: now } },
-        { endsAt: null },
+        { endsAt: { equals: null } },
       ];
     }
 
