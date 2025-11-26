@@ -125,10 +125,26 @@ export default async function channelsRoutes(app: FastifyInstance) {
       filter,
     );
 
+    // Formatuj programy w takim samym formacie jak /programs/day
+    const formattedPrograms = programs.map((program) => ({
+      id: program.id,
+      title: program.title,
+      channelId: program.channelId,
+      channelName: channel.name,
+      channelLogoUrl: channel.logoUrl ?? null,
+      description: program.description,
+      seasonNumber: program.seasonNumber,
+      episodeNumber: program.episodeNumber,
+      startsAt: program.startsAt,
+      endsAt: program.endsAt,
+      imageUrl: program.imageUrl ?? channel.logoUrl ?? null,
+      tags: program.tags ?? [],
+    }));
+
     return {
       data: {
         channel,
-        programs,
+        programs: formattedPrograms,
       },
     };
   });
