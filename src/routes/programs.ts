@@ -147,4 +147,44 @@ export default async function programsRoutes(app: FastifyInstance) {
       });
     }
   });
+
+  app.get('/:programId', async (request, reply) => {
+    try {
+      const params = z.object({ programId: z.string().uuid() }).parse(request.params);
+      
+      const program = await app.prisma.program.findUnique({
+        where: { id: params.programId },
+        include: {
+          channel: true,
+        },
+      });
+
+      if (!program) {
+        return reply.notFound('Program not found');
+      }
+
+      return {
+        data: {
+          id: program.id,
+          title: program.title,
+          channelId: program.channelId,
+          channelName: program.channel?.name ?? program.channelId,
+          channelLogoUrl: program.channel?.logoUrl ?? null,
+          description: program.description,
+          seasonNumber: program.seasonNumber,
+          episodeNumber: program.episodeNumber,
+          startsAt: program.startsAt,
+          endsAt: program.endsAt,
+          imageUrl: program.imageUrl ?? program.channel?.logoUrl ?? null,
+          tags: program.tags ?? [],
+        },
+      };
+    } catch (error) {
+      request.log.error(error, 'Failed to fetch program');
+      return reply.code(500).send({
+        error: 'Failed to fetch program',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
 }
