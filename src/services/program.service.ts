@@ -17,30 +17,18 @@ export class ProgramService {
     if (from && to) {
       where.AND = [
         { startsAt: { lt: to } },
-        {
-          OR: [
-            { endsAt: { gt: from } },
-            // Dla programów bez endsAt (null) - traktuj je jako aktywne
-            { endsAt: null as any },
-          ],
-        },
+        { endsAt: { gt: from } },
       ];
     } else if (from) {
       // Jeśli tylko 'from', pokazuj programy które jeszcze się nie zakończyły
-      where.OR = [
-        { endsAt: { gt: from } },
-        { endsAt: null as any },
-      ];
+      where.endsAt = { gt: from };
     } else if (to) {
       // Jeśli tylko 'to', pokazuj programy które się zaczynają przed tym czasem
       where.startsAt = { lt: to };
     } else {
       // Domyślnie pokazuj programy które jeszcze się nie zakończyły
       const now = new Date();
-      where.OR = [
-        { endsAt: { gt: now } },
-        { endsAt: null as any },
-      ];
+      where.endsAt = { gt: now };
     }
 
     return this.prisma.program.findMany({
