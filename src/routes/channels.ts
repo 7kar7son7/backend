@@ -155,7 +155,6 @@ export default async function channelsRoutes(app: FastifyInstance) {
         message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
-
   });
 }
 

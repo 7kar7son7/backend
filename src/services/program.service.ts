@@ -13,19 +13,29 @@ export class ProgramService {
     // Filtruj programy w zakresie dat
     // Program musi być aktywny w zakresie [from, to]
     // czyli: startsAt < to (program zaczyna się przed końcem zakresu)
-    //    i: endsAt > from (program kończy się po początku zakresu)
+    //    i: endsAt > from LUB endsAt jest null (program kończy się po początku zakresu lub nie ma końca)
     if (from && to) {
       where.startsAt = { lt: to };
-      where.endsAt = { gt: from };
+      where.OR = [
+        { endsAt: { gt: from } },
+        { endsAt: null },
+      ];
     } else if (from) {
       // Jeśli tylko 'from', pokazuj programy które jeszcze się nie zakończyły
-      where.endsAt = { gt: from };
+      where.OR = [
+        { endsAt: { gt: from } },
+        { endsAt: null },
+      ];
     } else if (to) {
       // Jeśli tylko 'to', pokazuj programy które się zaczynają przed tym czasem
       where.startsAt = { lt: to };
     } else {
       // Domyślnie pokazuj programy które jeszcze się nie zakończyły
-      where.endsAt = { gt: new Date() };
+      const now = new Date();
+      where.OR = [
+        { endsAt: { gt: now } },
+        { endsAt: null },
+      ];
     }
 
     return this.prisma.program.findMany({
