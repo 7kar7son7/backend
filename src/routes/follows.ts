@@ -10,6 +10,39 @@ const followBodySchema = z.object({
   targetId: z.string().uuid(),
 });
 
+function formatFollow(follow: any) {
+  return {
+    id: String(follow.id),
+    deviceId: String(follow.deviceId),
+    type: String(follow.type),
+    channel: follow.channel ? {
+      id: String(follow.channel.id),
+      externalId: String(follow.channel.externalId),
+      name: String(follow.channel.name),
+      description: follow.channel.description ?? null,
+      category: follow.channel.category ?? null,
+      logoUrl: follow.channel.logoUrl ?? null,
+      countryCode: follow.channel.countryCode ?? null,
+    } : null,
+    program: follow.program ? {
+      id: String(follow.program.id),
+      title: String(follow.program.title),
+      channelId: String(follow.program.channelId),
+      channelName: String(follow.program.channel?.name ?? ''),
+      channelLogoUrl: follow.program.channel?.logoUrl ?? null,
+      description: follow.program.description ?? null,
+      seasonNumber: follow.program.seasonNumber ?? null,
+      episodeNumber: follow.program.episodeNumber ?? null,
+      startsAt: follow.program.startsAt.toISOString(),
+      endsAt: follow.program.endsAt?.toISOString() ?? null,
+      imageUrl: follow.program.imageUrl ?? null,
+      tags: follow.program.tags ?? [],
+    } : null,
+    createdAt: follow.createdAt.toISOString(),
+    updatedAt: follow.updatedAt?.toISOString() ?? null,
+  };
+}
+
 export default async function followsRoutes(app: FastifyInstance) {
   const followService = new FollowService(app.prisma);
 
@@ -23,16 +56,7 @@ export default async function followsRoutes(app: FastifyInstance) {
     }
 
     const follows = await followService.list(deviceId);
-    // Upewnij się, że wszystkie pola są poprawnie serializowane
-    const formattedFollows = follows.map((follow) => ({
-      id: follow.id,
-      deviceId: follow.deviceId,
-      type: follow.type,
-      channel: follow.channel,
-      program: follow.program,
-      createdAt: follow.createdAt.toISOString(),
-      updatedAt: follow.updatedAt?.toISOString() ?? null,
-    }));
+    const formattedFollows = follows.map(formatFollow);
     return { data: formattedFollows };
   });
 
@@ -67,16 +91,7 @@ export default async function followsRoutes(app: FastifyInstance) {
     }
 
     const follows = await followService.list(deviceId);
-    // Upewnij się, że wszystkie pola są poprawnie serializowane
-    const formattedFollows = follows.map((follow) => ({
-      id: follow.id,
-      deviceId: follow.deviceId,
-      type: follow.type,
-      channel: follow.channel,
-      program: follow.program,
-      createdAt: follow.createdAt.toISOString(),
-      updatedAt: follow.updatedAt?.toISOString() ?? null,
-    }));
+    const formattedFollows = follows.map(formatFollow);
     return reply.code(201).send({ data: formattedFollows });
   });
 
@@ -98,17 +113,7 @@ export default async function followsRoutes(app: FastifyInstance) {
     }
 
     const follows = await followService.list(deviceId);
-    // Upewnij się, że wszystkie pola są poprawnie serializowane
-    const formattedFollows = follows.map((follow) => ({
-      id: follow.id,
-      deviceId: follow.deviceId,
-      type: follow.type,
-      channel: follow.channel,
-      program: follow.program,
-      createdAt: follow.createdAt.toISOString(),
-      updatedAt: follow.updatedAt?.toISOString() ?? null,
-    }));
+    const formattedFollows = follows.map(formatFollow);
     return { data: formattedFollows };
   });
 }
-
