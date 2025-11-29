@@ -17,43 +17,26 @@ class ChannelsNotifier extends AutoDisposeAsyncNotifier<ChannelsViewState> {
     return _fetchData();
   }
 
-  Future<void> followChannel(String channelId) async {
-    await _followApi.follow(
-      FollowRequest(type: FollowTypeDto.CHANNEL, targetId: channelId),
-    );
-    state = await AsyncValue.guard(_fetchData);
-  }
-
-  Future<void> unfollowChannel(String channelId) async {
-    await _followApi.unfollow(
-      FollowRequest(type: FollowTypeDto.CHANNEL, targetId: channelId),
-    );
-    state = await AsyncValue.guard(_fetchData);
-  }
-
   Future<ChannelsViewState> refresh() async {
     final newState = await _fetchData();
     state = AsyncValue.data(newState);
     return newState;
   }
 
-  Future<ChannelsViewState> _fetchData({int limit = 20, int offset = 0}) async {
+  Future<ChannelsViewState> _fetchData({int limit = 100, int offset = 0}) async {
     final channelsResp = await _channelApi.getChannels(
       includePrograms: true,
       limit: limit,
       offset: offset,
     );
-    final followsResp = await _followApi.getFollows();
 
-    final followedChannelIds = followsResp.data
-        .where((item) => item.type == FollowTypeDto.CHANNEL)
-        .map((item) => item.channel?.id)
-        .whereType<String>()
-        .toSet();
+    // Filtruj kanały bez zaplanowanych programów
+    final channelsWithPrograms = channelsResp.data
+        .where((channel) => channel.programs.isNotEmpty)
+        .toList();
 
     return ChannelsViewState(
-      channels: channelsResp.data,
-      followedChannelIds: followedChannelIds,
+      channels: channelsWithPrograms,
       hasMore: channelsResp.data.length == limit, // Jeśli zwrócono tyle ile limit, może być więcej
     );
   }
@@ -66,7 +49,7 @@ class ChannelsNotifier extends AutoDisposeAsyncNotifier<ChannelsViewState> {
     
     try {
       final newChannels = await _fetchData(
-        limit: 10,
+        limit: 50,
         offset: current.channels.length,
       );
       
