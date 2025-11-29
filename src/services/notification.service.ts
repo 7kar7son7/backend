@@ -60,12 +60,53 @@ export class NotificationService {
 
   async sendProgramStartingSoonReminder() {
     const now = new Date();
-    const fiveMinutesLater = new Date(now.getTime() + 5 * 60 * 1000);
+    
+    // 1. Przypomnienie 15 minut przed startem
+    // Sprawdź programy startujące za 14-15 minut (okno 1 minuty)
+    const fourteenMinutesLater = new Date(now.getTime() + 14 * 60 * 1000);
+    const fifteenMinutesLater = new Date(now.getTime() + 15 * 60 * 1000);
 
-    const programs = await this.prisma.program.findMany({
+    const programs15min = await this.prisma.program.findMany({
       where: {
         startsAt: {
-          gte: now,
+          gte: fourteenMinutesLater,
+          lte: fifteenMinutesLater,
+        },
+      },
+      include: {
+        channel: true,
+        programFollows: true,
+      },
+    });
+
+    for (const program of programs15min) {
+      const deviceIds = program.programFollows.map((follow) => follow.deviceId);
+      if (deviceIds.length === 0) {
+        continue;
+      }
+
+      await this.pushNotification.send(deviceIds, {
+        title: 'Start za 15 minut',
+        body: `${program.title} | ${program.channel?.name ?? ''}`,
+        data: {
+          type: 'PROGRAM_START_SOON',
+          programId: program.id,
+          channelId: program.channelId,
+          startsAt: program.startsAt.toISOString(),
+          reminderType: '15_MIN',
+        },
+      });
+    }
+
+    // 2. Przypomnienie 5 minut przed startem
+    // Sprawdź programy startujące za 4-5 minut (okno 1 minuty)
+    const fourMinutesLater = new Date(now.getTime() + 4 * 60 * 1000);
+    const fiveMinutesLater = new Date(now.getTime() + 5 * 60 * 1000);
+
+    const programs5min = await this.prisma.program.findMany({
+      where: {
+        startsAt: {
+          gte: fourMinutesLater,
           lte: fiveMinutesLater,
         },
       },
@@ -75,7 +116,7 @@ export class NotificationService {
       },
     });
 
-    for (const program of programs) {
+    for (const program of programs5min) {
       const deviceIds = program.programFollows.map((follow) => follow.deviceId);
       if (deviceIds.length === 0) {
         continue;
@@ -86,6 +127,42 @@ export class NotificationService {
         body: `${program.title} | ${program.channel?.name ?? ''}`,
         data: {
           type: 'PROGRAM_START_SOON',
+          programId: program.id,
+          channelId: program.channelId,
+          startsAt: program.startsAt.toISOString(),
+          reminderType: '5_MIN',
+        },
+      });
+    }
+
+    // 3. Powiadomienie gdy program się zacznie
+    // Sprawdź programy które właśnie się zaczęły (0-1 minuta od startu)
+    const oneMinuteAgo = new Date(now.getTime() - 1 * 60 * 1000);
+
+    const programsStarted = await this.prisma.program.findMany({
+      where: {
+        startsAt: {
+          gte: oneMinuteAgo,
+          lte: now,
+        },
+      },
+      include: {
+        channel: true,
+        programFollows: true,
+      },
+    });
+
+    for (const program of programsStarted) {
+      const deviceIds = program.programFollows.map((follow) => follow.deviceId);
+      if (deviceIds.length === 0) {
+        continue;
+      }
+
+      await this.pushNotification.send(deviceIds, {
+        title: 'Program właśnie się zaczął',
+        body: `${program.title} | ${program.channel?.name ?? ''}`,
+        data: {
+          type: 'PROGRAM_STARTED',
           programId: program.id,
           channelId: program.channelId,
           startsAt: program.startsAt.toISOString(),
