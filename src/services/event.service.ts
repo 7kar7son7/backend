@@ -27,12 +27,17 @@ export class EventService {
 
     const expiresAt = program.endsAt ?? new Date(program.startsAt.getTime() + 60 * 60 * 1000);
 
+    // Ustaw próg walidacji na 5-10 potwierdzeń (losowo między 5 a 10)
+    // To sprawia, że wydarzenia są walidowane po osiągnięciu progu
+    const followerCountLimit = Math.floor(Math.random() * 6) + 5; // 5-10
+
     const event = await this.prisma.event.create({
       data: {
         programId,
         initiatorDeviceId: deviceId,
         status: EventStatus.PENDING,
         expiresAt,
+        followerCountLimit,
       },
       include: {
         program: true,
