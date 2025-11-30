@@ -6,6 +6,7 @@ import deviceTokensRoutes from './device-tokens';
 import pointsRoutes from './points';
 import programsRoutes from './programs';
 import epgRoutes from './epg';
+import appRoutes from './app';
 
 export async function registerRoutes<T extends import('fastify').FastifyInstance>(
   app: T,
@@ -18,5 +19,6 @@ export async function registerRoutes<T extends import('fastify').FastifyInstance
   await app.register(pointsRoutes, { prefix: '/points' });
   await app.register(programsRoutes, { prefix: '/programs' });
   await app.register(epgRoutes, { prefix: '/epg' });
+  await app.register(appRoutes, { prefix: '/app' });
 }
 
