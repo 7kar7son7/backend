@@ -85,61 +85,50 @@ export class NotificationService {
         continue;
       }
 
-      // Użyj transakcji z create - jeśli unique constraint error, to znaczy że już wysłane
-      let shouldSend = false;
+      // Próbuj utworzyć rekord PRZED wysłaniem - jeśli już istnieje (P2002), nie wysyłaj
       try {
-        // Próbuj utworzyć rekord w transakcji - jeśli już istnieje, unique constraint zapobiegnie duplikatom
-        shouldSend = await this.prisma.$transaction(async (tx) => {
-          // Sprawdź czy już istnieje
-          const existing = await tx.programNotificationLog.findUnique({
-            where: {
-              programId_reminderType: {
-                programId: program.id,
-                reminderType: 'FIFTEEN_MIN',
-              },
-            },
-          });
-          
-          if (existing) {
-            return false; // Już wysłane
-          }
-          
-          // Utwórz rekord - jeśli dwa procesy próbują jednocześnie, unique constraint zapobiegnie duplikatom
-          await tx.programNotificationLog.create({
-            data: {
-              programId: program.id,
-              reminderType: 'FIFTEEN_MIN',
-            },
-          });
-          
-          return true; // Nowy rekord, można wysłać
+        // Próbuj utworzyć rekord - unique constraint zapobiegnie duplikatom
+        // Jeśli rekord już istnieje, dostaniemy P2002 i nie wyślemy powiadomienia
+        await this.prisma.programNotificationLog.create({
+          data: {
+            programId: program.id,
+            reminderType: 'FIFTEEN_MIN',
+          },
+        });
+        
+        // Rekord utworzony - teraz wyślij powiadomienie
+        await this.pushNotification.send(deviceIds, {
+          title: 'Start za 15 minut',
+          body: `${program.title} | ${program.channel?.name ?? ''}`,
+          data: {
+            type: 'PROGRAM_START_SOON',
+            programId: program.id,
+            channelId: program.channelId,
+            startsAt: program.startsAt.toISOString(),
+            reminderType: '15_MIN',
+          },
         });
       } catch (error: any) {
-        // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje (race condition)
+        // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje - nie wysyłaj
         if (error?.code === 'P2002') {
-          shouldSend = false; // Już wysłane przez inny proces
+          this.logger.debug({ programId: program.id }, 'Notification already sent (duplicate prevented)');
+          continue; // Już wysłane przez inny proces, pomiń
         } else {
           // Inny błąd (np. tabela nie istnieje) - kontynuuj wysyłanie
-          this.logger.warn({ error, programId: program.id }, 'Failed to check notification log, sending anyway');
-          shouldSend = true;
+          this.logger.warn({ error, programId: program.id }, 'Failed to create notification log, sending anyway');
+          await this.pushNotification.send(deviceIds, {
+            title: 'Start za 15 minut',
+            body: `${program.title} | ${program.channel?.name ?? ''}`,
+            data: {
+              type: 'PROGRAM_START_SOON',
+              programId: program.id,
+              channelId: program.channelId,
+              startsAt: program.startsAt.toISOString(),
+              reminderType: '15_MIN',
+            },
+          });
         }
       }
-
-      if (!shouldSend) {
-        continue; // Powiadomienie już wysłane
-      }
-
-      await this.pushNotification.send(deviceIds, {
-        title: 'Start za 15 minut',
-        body: `${program.title} | ${program.channel?.name ?? ''}`,
-        data: {
-          type: 'PROGRAM_START_SOON',
-          programId: program.id,
-          channelId: program.channelId,
-          startsAt: program.startsAt.toISOString(),
-          reminderType: '15_MIN',
-        },
-      });
     }
 
     // 2. Przypomnienie 5 minut przed startem
@@ -166,61 +155,50 @@ export class NotificationService {
         continue;
       }
 
-      // Użyj transakcji z create - jeśli unique constraint error, to znaczy że już wysłane
-      let shouldSend = false;
+      // Próbuj utworzyć rekord PRZED wysłaniem - jeśli już istnieje (P2002), nie wysyłaj
       try {
-        // Próbuj utworzyć rekord w transakcji - jeśli już istnieje, unique constraint zapobiegnie duplikatom
-        shouldSend = await this.prisma.$transaction(async (tx) => {
-          // Sprawdź czy już istnieje
-          const existing = await tx.programNotificationLog.findUnique({
-            where: {
-              programId_reminderType: {
-                programId: program.id,
-                reminderType: 'FIVE_MIN',
-              },
-            },
-          });
-          
-          if (existing) {
-            return false; // Już wysłane
-          }
-          
-          // Utwórz rekord - jeśli dwa procesy próbują jednocześnie, unique constraint zapobiegnie duplikatom
-          await tx.programNotificationLog.create({
-            data: {
-              programId: program.id,
-              reminderType: 'FIVE_MIN',
-            },
-          });
-          
-          return true; // Nowy rekord, można wysłać
+        // Próbuj utworzyć rekord - unique constraint zapobiegnie duplikatom
+        // Jeśli rekord już istnieje, dostaniemy P2002 i nie wyślemy powiadomienia
+        await this.prisma.programNotificationLog.create({
+          data: {
+            programId: program.id,
+            reminderType: 'FIVE_MIN',
+          },
+        });
+        
+        // Rekord utworzony - teraz wyślij powiadomienie
+        await this.pushNotification.send(deviceIds, {
+          title: 'Start za 5 minut',
+          body: `${program.title} | ${program.channel?.name ?? ''}`,
+          data: {
+            type: 'PROGRAM_START_SOON',
+            programId: program.id,
+            channelId: program.channelId,
+            startsAt: program.startsAt.toISOString(),
+            reminderType: '5_MIN',
+          },
         });
       } catch (error: any) {
-        // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje (race condition)
+        // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje - nie wysyłaj
         if (error?.code === 'P2002') {
-          shouldSend = false; // Już wysłane przez inny proces
+          this.logger.debug({ programId: program.id }, 'Notification already sent (duplicate prevented)');
+          continue; // Już wysłane przez inny proces, pomiń
         } else {
           // Inny błąd (np. tabela nie istnieje) - kontynuuj wysyłanie
-          this.logger.warn({ error, programId: program.id }, 'Failed to check notification log, sending anyway');
-          shouldSend = true;
+          this.logger.warn({ error, programId: program.id }, 'Failed to create notification log, sending anyway');
+          await this.pushNotification.send(deviceIds, {
+            title: 'Start za 5 minut',
+            body: `${program.title} | ${program.channel?.name ?? ''}`,
+            data: {
+              type: 'PROGRAM_START_SOON',
+              programId: program.id,
+              channelId: program.channelId,
+              startsAt: program.startsAt.toISOString(),
+              reminderType: '5_MIN',
+            },
+          });
         }
       }
-
-      if (!shouldSend) {
-        continue; // Powiadomienie już wysłane
-      }
-
-      await this.pushNotification.send(deviceIds, {
-        title: 'Start za 5 minut',
-        body: `${program.title} | ${program.channel?.name ?? ''}`,
-        data: {
-          type: 'PROGRAM_START_SOON',
-          programId: program.id,
-          channelId: program.channelId,
-          startsAt: program.startsAt.toISOString(),
-          reminderType: '5_MIN',
-        },
-      });
     }
 
     // 3. Powiadomienie gdy program się zacznie
@@ -246,60 +224,48 @@ export class NotificationService {
         continue;
       }
 
-      // Użyj transakcji z create - jeśli unique constraint error, to znaczy że już wysłane
-      let shouldSend = false;
+      // Próbuj utworzyć rekord PRZED wysłaniem - jeśli już istnieje (P2002), nie wysyłaj
       try {
-        // Próbuj utworzyć rekord w transakcji - jeśli już istnieje, unique constraint zapobiegnie duplikatom
-        shouldSend = await this.prisma.$transaction(async (tx) => {
-          // Sprawdź czy już istnieje
-          const existing = await tx.programNotificationLog.findUnique({
-            where: {
-              programId_reminderType: {
-                programId: program.id,
-                reminderType: 'STARTED',
-              },
-            },
-          });
-          
-          if (existing) {
-            return false; // Już wysłane
-          }
-          
-          // Utwórz rekord - jeśli dwa procesy próbują jednocześnie, unique constraint zapobiegnie duplikatom
-          await tx.programNotificationLog.create({
-            data: {
-              programId: program.id,
-              reminderType: 'STARTED',
-            },
-          });
-          
-          return true; // Nowy rekord, można wysłać
+        // Próbuj utworzyć rekord - unique constraint zapobiegnie duplikatom
+        // Jeśli rekord już istnieje, dostaniemy P2002 i nie wyślemy powiadomienia
+        await this.prisma.programNotificationLog.create({
+          data: {
+            programId: program.id,
+            reminderType: 'STARTED',
+          },
+        });
+        
+        // Rekord utworzony - teraz wyślij powiadomienie
+        await this.pushNotification.send(deviceIds, {
+          title: 'Program właśnie się zaczął',
+          body: `${program.title} | ${program.channel?.name ?? ''}`,
+          data: {
+            type: 'PROGRAM_STARTED',
+            programId: program.id,
+            channelId: program.channelId,
+            startsAt: program.startsAt.toISOString(),
+          },
         });
       } catch (error: any) {
-        // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje (race condition)
+        // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje - nie wysyłaj
         if (error?.code === 'P2002') {
-          shouldSend = false; // Już wysłane przez inny proces
+          this.logger.debug({ programId: program.id }, 'Notification already sent (duplicate prevented)');
+          continue; // Już wysłane przez inny proces, pomiń
         } else {
           // Inny błąd (np. tabela nie istnieje) - kontynuuj wysyłanie
-          this.logger.warn({ error, programId: program.id }, 'Failed to check notification log, sending anyway');
-          shouldSend = true;
+          this.logger.warn({ error, programId: program.id }, 'Failed to create notification log, sending anyway');
+          await this.pushNotification.send(deviceIds, {
+            title: 'Program właśnie się zaczął',
+            body: `${program.title} | ${program.channel?.name ?? ''}`,
+            data: {
+              type: 'PROGRAM_STARTED',
+              programId: program.id,
+              channelId: program.channelId,
+              startsAt: program.startsAt.toISOString(),
+            },
+          });
         }
       }
-
-      if (!shouldSend) {
-        continue; // Powiadomienie już wysłane
-      }
-
-      await this.pushNotification.send(deviceIds, {
-        title: 'Program właśnie się zaczął',
-        body: `${program.title} | ${program.channel?.name ?? ''}`,
-        data: {
-          type: 'PROGRAM_STARTED',
-          programId: program.id,
-          channelId: program.channelId,
-          startsAt: program.startsAt.toISOString(),
-        },
-      });
     }
   }
 }
