@@ -24,22 +24,23 @@ model Channel {
 }
 
 model Program {
-  id             String         @id @default(uuid()) @db.Uuid
-  channelId      String         @db.Uuid
-  externalId     String         @unique
+  id             String                  @id @default(uuid()) @db.Uuid
+  channelId      String                  @db.Uuid
+  externalId     String                  @unique
   title          String
   description    String?
   seasonNumber   Int?
   episodeNumber  Int?
-  startsAt       DateTime       @db.Timestamptz(6)
-  endsAt         DateTime       @db.Timestamptz(6)
+  startsAt       DateTime                @db.Timestamptz(6)
+  endsAt         DateTime                @db.Timestamptz(6)
   imageUrl       String?
   tags           String[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
   eventWindows   Event[]
   programFollows FollowedItem[]
-  channel        Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  channel        Channel                 @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  notificationLogs ProgramNotificationLog[]
 
   @@index([channelId, startsAt])
   @@index([endsAt])
@@ -183,4 +184,22 @@ enum PointReason {
   STREAK_BONUS
   MANUAL_ADJUSTMENT
   DOUBLE_CONFIRM
+}
+
+model ProgramNotificationLog {
+  id           String            @id @default(uuid()) @db.Uuid
+  programId    String            @db.Uuid
+  reminderType ProgramReminderType
+  sentAt       DateTime          @default(now()) @db.Timestamptz(6)
+  program      Program           @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, reminderType], map: "program_reminder_unique")
+  @@index([programId, sentAt])
+  @@map("program_notification_log")
+}
+
+enum ProgramReminderType {
+  FIFTEEN_MIN
+  FIVE_MIN
+  STARTED
 }

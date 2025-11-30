@@ -85,6 +85,20 @@ export class NotificationService {
         continue;
       }
 
+      // Sprawdź czy powiadomienie już zostało wysłane
+      const existingLog = await this.prisma.programNotificationLog.findUnique({
+        where: {
+          programId_reminderType: {
+            programId: program.id,
+            reminderType: 'FIFTEEN_MIN',
+          },
+        },
+      });
+
+      if (existingLog) {
+        continue; // Powiadomienie już wysłane
+      }
+
       await this.pushNotification.send(deviceIds, {
         title: 'Start za 15 minut',
         body: `${program.title} | ${program.channel?.name ?? ''}`,
@@ -94,6 +108,14 @@ export class NotificationService {
           channelId: program.channelId,
           startsAt: program.startsAt.toISOString(),
           reminderType: '15_MIN',
+        },
+      });
+
+      // Zapisz w logu
+      await this.prisma.programNotificationLog.create({
+        data: {
+          programId: program.id,
+          reminderType: 'FIFTEEN_MIN',
         },
       });
     }
@@ -122,6 +144,20 @@ export class NotificationService {
         continue;
       }
 
+      // Sprawdź czy powiadomienie już zostało wysłane
+      const existingLog = await this.prisma.programNotificationLog.findUnique({
+        where: {
+          programId_reminderType: {
+            programId: program.id,
+            reminderType: 'FIVE_MIN',
+          },
+        },
+      });
+
+      if (existingLog) {
+        continue; // Powiadomienie już wysłane
+      }
+
       await this.pushNotification.send(deviceIds, {
         title: 'Start za 5 minut',
         body: `${program.title} | ${program.channel?.name ?? ''}`,
@@ -131,6 +167,14 @@ export class NotificationService {
           channelId: program.channelId,
           startsAt: program.startsAt.toISOString(),
           reminderType: '5_MIN',
+        },
+      });
+
+      // Zapisz w logu
+      await this.prisma.programNotificationLog.create({
+        data: {
+          programId: program.id,
+          reminderType: 'FIVE_MIN',
         },
       });
     }
@@ -158,6 +202,20 @@ export class NotificationService {
         continue;
       }
 
+      // Sprawdź czy powiadomienie już zostało wysłane
+      const existingLog = await this.prisma.programNotificationLog.findUnique({
+        where: {
+          programId_reminderType: {
+            programId: program.id,
+            reminderType: 'STARTED',
+          },
+        },
+      });
+
+      if (existingLog) {
+        continue; // Powiadomienie już wysłane
+      }
+
       await this.pushNotification.send(deviceIds, {
         title: 'Program właśnie się zaczął',
         body: `${program.title} | ${program.channel?.name ?? ''}`,
@@ -166,6 +224,14 @@ export class NotificationService {
           programId: program.id,
           channelId: program.channelId,
           startsAt: program.startsAt.toISOString(),
+        },
+      });
+
+      // Zapisz w logu
+      await this.prisma.programNotificationLog.create({
+        data: {
+          programId: program.id,
+          reminderType: 'STARTED',
         },
       });
     }
