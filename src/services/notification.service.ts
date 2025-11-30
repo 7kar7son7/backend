@@ -202,13 +202,13 @@ export class NotificationService {
     }
 
     // 3. Powiadomienie gdy program się zacznie
-    // Sprawdź programy które właśnie się zaczęły (0-1 minuta od startu)
-    const oneMinuteAgo = new Date(now.getTime() - 1 * 60 * 1000);
+    // Sprawdź programy które właśnie się zaczęły (0-30 sekund od startu) - wąskie okno aby uniknąć duplikatów
+    const thirtySecondsAgo = new Date(now.getTime() - 30 * 1000);
 
     const programsStarted = await this.prisma.program.findMany({
       where: {
         startsAt: {
-          gte: oneMinuteAgo,
+          gte: thirtySecondsAgo,
           lte: now,
         },
       },
