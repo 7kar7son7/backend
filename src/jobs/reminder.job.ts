@@ -21,7 +21,8 @@ export function startReminderJob(app: FastifyInstance): ScheduledTask {
       const now = new Date();
       const currentHour = now.getHours();
 
-      await notificationService.sendProgramStartingSoonReminder();
+      // Usunięto sendProgramStartingSoonReminder() - jest wywoływane przez event-notification.job.ts
+      // aby uniknąć duplikatów powiadomień
 
       const activeEvents = await app.prisma.event.findMany({
         where: {
