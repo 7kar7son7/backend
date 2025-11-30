@@ -224,23 +224,47 @@ export class NotificationService {
         continue;
       }
 
-      // Sprawdź czy powiadomienie już zostało wysłane (z obsługą błędów jeśli tabela nie istnieje)
-      let existingLog = null;
+      // Użyj transakcji z create - jeśli unique constraint error, to znaczy że już wysłane
+      let shouldSend = false;
       try {
-        existingLog = await this.prisma.programNotificationLog.findUnique({
-          where: {
-            programId_reminderType: {
+        // Próbuj utworzyć rekord w transakcji - jeśli już istnieje, unique constraint zapobiegnie duplikatom
+        shouldSend = await this.prisma.$transaction(async (tx) => {
+          // Sprawdź czy już istnieje
+          const existing = await tx.programNotificationLog.findUnique({
+            where: {
+              programId_reminderType: {
+                programId: program.id,
+                reminderType: 'STARTED',
+              },
+            },
+          });
+          
+          if (existing) {
+            return false; // Już wysłane
+          }
+          
+          // Utwórz rekord - jeśli dwa procesy próbują jednocześnie, unique constraint zapobiegnie duplikatom
+          await tx.programNotificationLog.create({
+            data: {
               programId: program.id,
               reminderType: 'STARTED',
             },
-          },
+          });
+          
+          return true; // Nowy rekord, można wysłać
         });
-      } catch (error) {
-        // Jeśli tabela nie istnieje (migracja nie zastosowana), kontynuuj wysyłanie
-        this.logger.warn({ error, programId: program.id }, 'Failed to check notification log, sending anyway');
+      } catch (error: any) {
+        // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje (race condition)
+        if (error?.code === 'P2002') {
+          shouldSend = false; // Już wysłane przez inny proces
+        } else {
+          // Inny błąd (np. tabela nie istnieje) - kontynuuj wysyłanie
+          this.logger.warn({ error, programId: program.id }, 'Failed to check notification log, sending anyway');
+          shouldSend = true;
+        }
       }
 
-      if (existingLog) {
+      if (!shouldSend) {
         continue; // Powiadomienie już wysłane
       }
 
@@ -254,19 +278,6 @@ export class NotificationService {
           startsAt: program.startsAt.toISOString(),
         },
       });
-
-      // Zapisz w logu (z obsługą błędów)
-      try {
-        await this.prisma.programNotificationLog.create({
-          data: {
-            programId: program.id,
-            reminderType: 'STARTED',
-          },
-        });
-      } catch (error) {
-        // Jeśli tabela nie istnieje, zignoruj błąd
-        this.logger.warn({ error, programId: program.id }, 'Failed to log notification, continuing');
-      }
     }
   }
 }
