@@ -75,7 +75,11 @@ export class NotificationService {
       },
       include: {
         channel: true,
-        programFollows: true,
+        programFollows: {
+          where: {
+            type: 'PROGRAM',
+          },
+        },
       },
     });
 
@@ -145,7 +149,11 @@ export class NotificationService {
       },
       include: {
         channel: true,
-        programFollows: true,
+        programFollows: {
+          where: {
+            type: 'PROGRAM',
+          },
+        },
       },
     });
 
@@ -181,7 +189,6 @@ export class NotificationService {
       } catch (error: any) {
         // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje - nie wysyłaj
         if (error?.code === 'P2002') {
-          this.logger.debug({ programId: program.id }, 'Notification already sent (duplicate prevented)');
           continue; // Już wysłane przez inny proces, pomiń
         } else {
           // Inny błąd (np. tabela nie istnieje) - kontynuuj wysyłanie
@@ -214,7 +221,11 @@ export class NotificationService {
       },
       include: {
         channel: true,
-        programFollows: true,
+        programFollows: {
+          where: {
+            type: 'PROGRAM',
+          },
+        },
       },
     });
 
@@ -249,7 +260,6 @@ export class NotificationService {
       } catch (error: any) {
         // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje - nie wysyłaj
         if (error?.code === 'P2002') {
-          this.logger.debug({ programId: program.id }, 'Notification already sent (duplicate prevented)');
           continue; // Już wysłane przez inny proces, pomiń
         } else {
           // Inny błąd (np. tabela nie istnieje) - kontynuuj wysyłanie
