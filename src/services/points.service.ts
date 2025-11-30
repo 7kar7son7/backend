@@ -174,5 +174,18 @@ export class PointsService {
       },
     });
   }
+
+  async getLeaderboard(limit: number = 50) {
+    return this.prisma.pointBalance.findMany({
+      orderBy: { totalPoints: Prisma.SortOrder.desc },
+      take: limit,
+      select: {
+        deviceId: true,
+        totalPoints: true,
+        streakLength: true,
+        lastActive: true,
+      },
+    });
+  }
 }
 

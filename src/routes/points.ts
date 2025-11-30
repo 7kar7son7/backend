@@ -32,5 +32,16 @@ export default async function pointsRoutes(app: FastifyInstance) {
     await pointsService.addManualPoints(body.deviceId, body.amount, body.description);
     return reply.code(201).send({ status: 'ok' });
   });
+
+  app.get('/leaderboard', async (request, reply) => {
+    const query = z
+      .object({
+        limit: z.string().optional().transform((val) => (val ? Number.parseInt(val, 10) : 50)),
+      })
+      .parse(request.query);
+
+    const leaderboard = await pointsService.getLeaderboard(query.limit);
+    return { data: leaderboard };
+  });
 }
 
