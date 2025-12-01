@@ -75,11 +75,7 @@ export class NotificationService {
       },
       include: {
         channel: true,
-        programFollows: {
-          where: {
-            type: 'PROGRAM',
-          },
-        },
+        programFollows: true,
       },
     });
 
@@ -149,11 +145,7 @@ export class NotificationService {
       },
       include: {
         channel: true,
-        programFollows: {
-          where: {
-            type: 'PROGRAM',
-          },
-        },
+        programFollows: true,
       },
     });
 
@@ -221,11 +213,7 @@ export class NotificationService {
       },
       include: {
         channel: true,
-        programFollows: {
-          where: {
-            type: 'PROGRAM',
-          },
-        },
+        programFollows: true,
       },
     });
 
