@@ -11,6 +11,8 @@ COPY tsconfig.json ./
 RUN npm ci
 
 # Wygeneruj Prisma Client (przed buildem TypeScript)
+# Ustaw placeholder DATABASE_URL dla prisma generate (nie jest używany podczas generowania)
+ENV DATABASE_URL="postgresql://user:password@localhost:5432/db?schema=public"
 RUN npx prisma generate
 
 # Skopiuj kod źródłowy
