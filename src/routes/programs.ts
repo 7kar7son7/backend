@@ -23,7 +23,55 @@ const dayQuerySchema = z.object({
     .transform((value) => (value ? Number.parseInt(value, 10) : undefined)),
 });
 
+const searchQuerySchema = z.object({
+  search: z.string().min(2),
+  limit: z
+    .string()
+    .optional()
+    .transform((value) => (value ? Number.parseInt(value, 10) : undefined)),
+  offset: z
+    .string()
+    .optional()
+    .transform((value) => (value ? Number.parseInt(value, 10) : undefined)),
+});
+
 export default async function programsRoutes(app: FastifyInstance) {
+  const programService = new (await import('../services/program.service')).ProgramService(app.prisma);
+
+  app.get('/search', async (request, reply) => {
+    try {
+      const query = searchQuerySchema.parse(request.query);
+      const programs = await programService.searchPrograms({
+        search: query.search,
+        limit: query.limit,
+        offset: query.offset,
+      });
+
+      return {
+        data: programs.map((program) => ({
+          id: program.id,
+          title: program.title,
+          channelId: program.channelId,
+          channelName: program.channel?.name ?? program.channelId,
+          channelLogoUrl: program.channel?.logoUrl ?? null,
+          description: program.description,
+          seasonNumber: program.seasonNumber,
+          episodeNumber: program.episodeNumber,
+          startsAt: program.startsAt,
+          endsAt: program.endsAt,
+          imageUrl: program.imageUrl ?? program.channel?.logoUrl ?? null,
+          tags: program.tags ?? [],
+        })),
+      };
+    } catch (error) {
+      request.log.error(error, 'Failed to search programs');
+      return reply.code(500).send({
+        error: 'Failed to search programs',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
   app.get('/day', async (request, reply) => {
     try {
       const query = dayQuerySchema.parse(request.query);

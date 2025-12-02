@@ -53,5 +53,37 @@ export class ProgramService {
       },
     });
   }
+
+  searchPrograms(params: { search: string; limit?: number; offset?: number }) {
+    const { search, limit, offset } = params;
+    const now = new Date();
+
+    return this.prisma.program.findMany({
+      where: {
+        AND: [
+          {
+            OR: [
+              { title: { contains: search, mode: 'insensitive' } },
+              { description: { contains: search, mode: 'insensitive' } },
+            ],
+          },
+          // Tylko programy które jeszcze się nie zakończyły
+          {
+            endsAt: {
+              gt: now,
+            },
+          },
+        ],
+      },
+      include: {
+        channel: true,
+      },
+      orderBy: {
+        startsAt: 'asc',
+      },
+      take: limit ?? 50,
+      skip: offset ?? 0,
+    });
+  }
 }
 

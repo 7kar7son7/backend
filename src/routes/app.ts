@@ -6,8 +6,8 @@ export default async function appRoutes(app: FastifyInstance) {
     // Format: "1.0.26" (bez build number)
     return {
       data: {
-        version: '1.0.28',
-        buildNumber: 67,
+        version: '1.0.31',
+        buildNumber: 71,
         minRequiredVersion: '1.0.20', // Minimalna wymagana wersja (opcjonalnie)
         updateUrl: 'https://play.google.com/store/apps/details?id=com.backontv.app',
       },
