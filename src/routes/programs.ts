@@ -43,8 +43,8 @@ export default async function programsRoutes(app: FastifyInstance) {
       const query = searchQuerySchema.parse(request.query);
       const programs = await programService.searchPrograms({
         search: query.search,
-        limit: query.limit,
-        offset: query.offset,
+        ...(query.limit !== undefined && { limit: query.limit }),
+        ...(query.offset !== undefined && { offset: query.offset }),
       });
 
       return {
