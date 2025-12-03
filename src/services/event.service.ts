@@ -49,6 +49,51 @@ export class EventService {
     });
 
     const followerDeviceIds = await this.syncEventFollowers(event.id, programId);
+    
+    // Dodaj inicjatora do followers, jeśli jeszcze nie jest na liście
+    const initiatorIsFollower = followerDeviceIds.includes(deviceId);
+    if (!initiatorIsFollower) {
+      // Sprawdź czy inicjator śledzi program
+      const initiatorFollow = await this.prisma.followedItem.findFirst({
+        where: {
+          programId,
+          deviceId,
+          type: FollowType.PROGRAM,
+        },
+      });
+      
+      if (initiatorFollow) {
+        // Jeśli śledzi program, dodaj do followers
+        await this.prisma.event.update({
+          where: { id: event.id },
+          data: {
+            followers: {
+              connect: { id: initiatorFollow.id },
+            },
+          },
+        });
+        followerDeviceIds.push(deviceId);
+      } else {
+        // Jeśli nie śledzi, utwórz tymczasowy follow tylko dla tego wydarzenia
+        const tempFollow = await this.prisma.followedItem.create({
+          data: {
+            deviceId,
+            type: FollowType.PROGRAM,
+            programId,
+          },
+        });
+        
+        await this.prisma.event.update({
+          where: { id: event.id },
+          data: {
+            followers: {
+              connect: { id: tempFollow.id },
+            },
+          },
+        });
+        followerDeviceIds.push(deviceId);
+      }
+    }
 
     return { event, followerDeviceIds };
   }
