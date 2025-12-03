@@ -31,7 +31,18 @@ export default async function eventsRoutes(app: FastifyInstance) {
     }
 
     const events = await eventService.listActiveEvents(deviceId);
-    return { data: events };
+    
+    // Formatuj eventy - dodaj channelName i channelLogoUrl do program
+    const formattedEvents = events.map((event) => ({
+      ...event,
+      program: {
+        ...event.program,
+        channelName: event.program.channel?.name ?? event.program.channelId,
+        channelLogoUrl: event.program.channel?.logoUrl ?? null,
+      },
+    }));
+    
+    return { data: formattedEvents };
   });
 
   app.post('/', async (request, reply) => {
@@ -62,7 +73,17 @@ export default async function eventsRoutes(app: FastifyInstance) {
       const recipients = followerDeviceIds.filter((id) => id !== deviceId);
       await notificationService.sendEventStartedNotification(recipients, payload);
 
-      return reply.code(201).send({ data: event });
+      // Formatuj event.program tak jak w innych endpointach (dodaj channelName)
+      const formattedEvent = {
+        ...event,
+        program: {
+          ...event.program,
+          channelName: event.program.channel?.name ?? event.program.channelId,
+          channelLogoUrl: event.program.channel?.logoUrl ?? null,
+        },
+      };
+
+      return reply.code(201).send({ data: formattedEvent });
     } catch (error) {
       if (error instanceof Error && error.message === 'Program not found') {
         return reply.notFound(error.message);

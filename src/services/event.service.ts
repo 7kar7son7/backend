@@ -40,7 +40,11 @@ export class EventService {
         followerCountLimit,
       },
       include: {
-        program: true,
+        program: {
+          include: {
+            channel: true,
+          },
+        },
       },
     });
 
@@ -58,7 +62,11 @@ export class EventService {
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
       include: {
-        program: true,
+        program: {
+          include: {
+            channel: true,
+          },
+        },
         confirmations: true,
       },
     });
@@ -146,7 +154,11 @@ export class EventService {
         },
       },
       include: {
-        program: true,
+        program: {
+          include: {
+            channel: true,
+          },
+        },
         confirmations: true,
       },
       orderBy: { initiatedAt: Prisma.SortOrder.desc },
