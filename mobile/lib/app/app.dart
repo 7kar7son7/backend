@@ -1,9 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/app_router.dart';
+import '../core/services/app_version_service.dart';
 import '../core/services/fcm_service.dart';
+import '../core/services/local_notifications_service.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/theme_controller.dart';
 
@@ -22,6 +25,51 @@ class _AppState extends ConsumerState<App> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final container = ProviderScope.containerOf(context);
       FcmService.registerTokenInBackend(container);
+      _setupNotificationHandlers(container);
+      
+      // Sprawdź czy jest dostępna nowa wersja (z opóźnieniem, żeby UI było gotowe)
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          AppVersionService.checkForUpdate(context, ref);
+        }
+      });
+    });
+  }
+
+  void _setupNotificationHandlers(ProviderContainer container) {
+    // Obsługa kliknięcia w lokalną notyfikację
+    LocalNotificationsService.setNotificationTapHandler((response) {
+      final payload = response.payload;
+      if (payload == null) return;
+
+      final router = container.read(appRouterProvider);
+      
+      // Obsługa dziennej przypominajki - nawiguj do listy kanałów
+      if (payload == 'daily_reminder') {
+        router.go('/home/channels');
+        return;
+      }
+
+      // Obsługa wydarzenia "KONIEC REKLAM" - payload format: "event_eventId_program_programId"
+      if (payload.startsWith('event_')) {
+        final parts = payload.split('_');
+        if (parts.length >= 4 && parts[0] == 'event' && parts[2] == 'program') {
+          final eventId = parts[1];
+          final programId = parts[3];
+          debugPrint('🔔 Local notification tapped - event: $eventId, program: $programId');
+          Future.delayed(const Duration(milliseconds: 300), () {
+            router.go('/programs/$programId?eventId=$eventId');
+          });
+          return;
+        }
+      }
+
+      // Obsługa przypominajki o programie - payload format: "program_programId" (użyto podkreślnika zamiast dwukropka)
+      if (payload.startsWith('program_')) {
+        final programId = payload.substring(8); // Usuń "program_" prefix
+        router.push('/programs/$programId');
+        return;
+      }
     });
   }
 
