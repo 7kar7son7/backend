@@ -28,8 +28,8 @@ export class NotificationService {
 
   async sendEventStartedNotification(deviceIds: string[], payload: ReminderPayload) {
     await this.pushNotification.send(deviceIds, {
-      title: 'Nowe wydarzenie do potwierdzenia',
-      body: `${payload.programTitle} właśnie się rozpoczęło`,
+      title: 'KONIEC REKLAM',
+      body: `${payload.programTitle} - reklamy zakończone? Potwierdź!`,
       data: {
         type: 'EVENT_STARTED',
         eventId: payload.eventId,

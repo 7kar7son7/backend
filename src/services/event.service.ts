@@ -7,10 +7,14 @@ import {
   ReminderKind,
 } from '@prisma/client';
 
+type CreateEventOptions = {
+  skipInitiatorFollow?: boolean;
+};
+
 export class EventService {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async createEvent(deviceId: string, programId: string) {
+  async createEvent(deviceId: string, programId: string, options?: CreateEventOptions) {
     const program = await this.prisma.program.findUnique({
       where: { id: programId },
       select: {
@@ -27,9 +31,9 @@ export class EventService {
 
     const expiresAt = program.endsAt ?? new Date(program.startsAt.getTime() + 60 * 60 * 1000);
 
-    // Ustaw próg walidacji na 5-10 potwierdzeń (losowo między 5 a 10)
+    // Ustaw próg walidacji na 1 dla testów (docelowo 5-10)
     // To sprawia, że wydarzenia są walidowane po osiągnięciu progu
-    const followerCountLimit = Math.floor(Math.random() * 6) + 5; // 5-10
+    const followerCountLimit = 1; // Na początek 1 dla testów, później 5-10
 
     const event = await this.prisma.event.create({
       data: {
@@ -50,52 +54,74 @@ export class EventService {
 
     const followerDeviceIds = await this.syncEventFollowers(event.id, programId);
     
-    // Dodaj inicjatora do followers, jeśli jeszcze nie jest na liście
-    const initiatorIsFollower = followerDeviceIds.includes(deviceId);
-    if (!initiatorIsFollower) {
-      // Sprawdź czy inicjator śledzi program
-      const initiatorFollow = await this.prisma.followedItem.findFirst({
-        where: {
-          programId,
-          deviceId,
-          type: FollowType.PROGRAM,
-        },
-      });
-      
-      if (initiatorFollow) {
-        // Jeśli śledzi program, dodaj do followers
-        await this.prisma.event.update({
-          where: { id: event.id },
-          data: {
-            followers: {
-              connect: { id: initiatorFollow.id },
-            },
-          },
-        });
-        followerDeviceIds.push(deviceId);
-      } else {
-        // Jeśli nie śledzi, utwórz tymczasowy follow tylko dla tego wydarzenia
-        const tempFollow = await this.prisma.followedItem.create({
-          data: {
+    if (!options?.skipInitiatorFollow) {
+      // Dodaj inicjatora do followers, jeśli jeszcze nie jest na liście
+      const initiatorIsFollower = followerDeviceIds.includes(deviceId);
+      if (!initiatorIsFollower) {
+        // Sprawdź czy inicjator śledzi program
+        const initiatorFollow = await this.prisma.followedItem.findFirst({
+          where: {
+            programId,
             deviceId,
             type: FollowType.PROGRAM,
-            programId,
           },
         });
         
-        await this.prisma.event.update({
-          where: { id: event.id },
-          data: {
-            followers: {
-              connect: { id: tempFollow.id },
+        if (initiatorFollow) {
+          // Jeśli śledzi program, dodaj do followers
+          await this.prisma.event.update({
+            where: { id: event.id },
+            data: {
+              followers: {
+                connect: { id: initiatorFollow.id },
+              },
             },
-          },
-        });
-        followerDeviceIds.push(deviceId);
+          });
+          followerDeviceIds.push(deviceId);
+        } else {
+          // Jeśli nie śledzi, utwórz tymczasowy follow tylko dla tego wydarzenia
+          const tempFollow = await this.prisma.followedItem.create({
+            data: {
+              deviceId,
+              type: FollowType.PROGRAM,
+              programId,
+            },
+          });
+          
+          await this.prisma.event.update({
+            where: { id: event.id },
+            data: {
+              followers: {
+                connect: { id: tempFollow.id },
+              },
+            },
+          });
+          followerDeviceIds.push(deviceId);
+        }
       }
     }
 
     return { event, followerDeviceIds };
+  }
+
+  async getEvent(eventId: string) {
+    return this.prisma.event.findUnique({
+      where: { id: eventId },
+      include: {
+        program: {
+          include: {
+            channel: true,
+          },
+        },
+        confirmations: true,
+      },
+    });
+  }
+
+  async getEventConfirmationsCount(eventId: string) {
+    return this.prisma.eventConfirmation.count({
+      where: { eventId },
+    });
   }
 
   async confirmEvent(
@@ -233,6 +259,45 @@ export class EventService {
     });
 
     return followers.map((follow) => follow.deviceId);
+  }
+
+  /**
+   * Pobiera wszystkich followers programu (do wysłania powiadomień)
+   * Wyklucza deviceId które już zgłosiły event (są w confirmations)
+   */
+  async getProgramFollowersForNotification(eventId: string, programId: string) {
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      select: {
+        confirmations: {
+          select: { deviceId: true },
+        },
+        initiatorDeviceId: true,
+      },
+    });
+
+    if (!event) {
+      return [];
+    }
+
+    // Pobierz wszystkich followers programu
+    const followers = await this.prisma.followedItem.findMany({
+      where: {
+        programId,
+        type: FollowType.PROGRAM,
+      },
+      select: { deviceId: true },
+    });
+
+    // Wyklucz tych którzy już zgłosili (są w confirmations) oraz inicjatora
+    const confirmedDeviceIds = new Set([
+      ...event.confirmations.map((c) => c.deviceId),
+      event.initiatorDeviceId,
+    ]);
+
+    return followers
+      .map((f) => f.deviceId)
+      .filter((deviceId) => !confirmedDeviceIds.has(deviceId));
   }
 }
 
