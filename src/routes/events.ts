@@ -187,11 +187,15 @@ export default async function eventsRoutes(app: FastifyInstance) {
         );
 
         if (recipients.length > 0) {
+          // Upewnij się, że mamy czytelny tytuł programu
+          const programTitle = eventBefore.program.title || 'Program';
+          const channelName = eventBefore.program.channel?.name || '';
+          
           const payload = {
             eventId: params.eventId,
             programId: eventBefore.programId,
             channelId: eventBefore.program.channelId,
-            programTitle: eventBefore.program.title,
+            programTitle: channelName ? `${channelName}: ${programTitle}` : programTitle,
             startsAt: eventBefore.program.startsAt.toISOString(),
           };
 

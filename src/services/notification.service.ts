@@ -27,9 +27,15 @@ export class NotificationService {
   }
 
   async sendEventStartedNotification(deviceIds: string[], payload: ReminderPayload) {
+    // Upewnij się, że mamy czytelną treść powiadomienia
+    const programTitle = payload.programTitle || 'Program';
+    const notificationBody = programTitle.length > 50 
+      ? `${programTitle.substring(0, 47)}... - reklamy zakończone? Potwierdź!`
+      : `${programTitle} - reklamy zakończone? Potwierdź!`;
+    
     await this.pushNotification.send(deviceIds, {
       title: 'KONIEC REKLAM',
-      body: `${payload.programTitle} - reklamy zakończone? Potwierdź!`,
+      body: notificationBody,
       data: {
         type: 'EVENT_STARTED',
         eventId: payload.eventId,
