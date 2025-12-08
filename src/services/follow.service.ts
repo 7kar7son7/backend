@@ -63,21 +63,95 @@ export class FollowService {
   }
 
   async unfollowChannel(deviceId: string, channelId: string) {
-    await this.prisma.followedItem.deleteMany({
+    // Najpierw znajdź FollowedItem, żeby móc usunąć relacje z Event
+    const follow = await this.prisma.followedItem.findFirst({
       where: {
         deviceId,
         channelId,
       },
+      include: {
+        events: {
+          select: { id: true },
+        },
+      },
     });
+
+    if (!follow) {
+      return; // Już nie istnieje, nic nie rób
+    }
+
+    // Usuń relacje z Event (many-to-many) i FollowedItem w jednej transakcji
+    await this.prisma.$transaction(
+      async (tx) => {
+        // Usuń relacje z Event
+        if (follow.events.length > 0) {
+          await Promise.all(
+            follow.events.map((event) =>
+              tx.event.update({
+                where: { id: event.id },
+                data: {
+                  followers: {
+                    disconnect: { id: follow.id },
+                  },
+                },
+              }),
+            ),
+          );
+        }
+
+        // Teraz usuń FollowedItem
+        await tx.followedItem.delete({
+          where: { id: follow.id },
+        });
+      },
+      { timeout: 10000 }, // 10 sekund timeout
+    );
   }
 
   async unfollowProgram(deviceId: string, programId: string) {
-    await this.prisma.followedItem.deleteMany({
+    // Najpierw znajdź FollowedItem, żeby móc usunąć relacje z Event
+    const follow = await this.prisma.followedItem.findFirst({
       where: {
         deviceId,
         programId,
       },
+      include: {
+        events: {
+          select: { id: true },
+        },
+      },
     });
+
+    if (!follow) {
+      return; // Już nie istnieje, nic nie rób
+    }
+
+    // Usuń relacje z Event (many-to-many) i FollowedItem w jednej transakcji
+    await this.prisma.$transaction(
+      async (tx) => {
+        // Usuń relacje z Event
+        if (follow.events.length > 0) {
+          await Promise.all(
+            follow.events.map((event) =>
+              tx.event.update({
+                where: { id: event.id },
+                data: {
+                  followers: {
+                    disconnect: { id: follow.id },
+                  },
+                },
+              }),
+            ),
+          );
+        }
+
+        // Teraz usuń FollowedItem
+        await tx.followedItem.delete({
+          where: { id: follow.id },
+        });
+      },
+      { timeout: 10000 }, // 10 sekund timeout
+    );
   }
 }
 

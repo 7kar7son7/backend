@@ -106,14 +106,27 @@ export default async function followsRoutes(app: FastifyInstance) {
 
     const body = followBodySchema.parse(request.body);
 
-    if (body.type === FollowType.CHANNEL) {
-      await followService.unfollowChannel(deviceId, body.targetId);
-    } else {
-      await followService.unfollowProgram(deviceId, body.targetId);
-    }
+    try {
+      if (body.type === FollowType.CHANNEL) {
+        await followService.unfollowChannel(deviceId, body.targetId);
+      } else {
+        await followService.unfollowProgram(deviceId, body.targetId);
+      }
 
-    const follows = await followService.list(deviceId);
-    const formattedFollows = follows.map(formatFollow);
-    return { data: formattedFollows };
+      const follows = await followService.list(deviceId);
+      const formattedFollows = follows.map(formatFollow);
+      return { data: formattedFollows };
+    } catch (error) {
+      request.log.error(error, 'Failed to unfollow target');
+      
+      // Jeśli timeout lub błąd bazy danych, zwróć błąd zamiast 408
+      if (error instanceof Error) {
+        if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+          return reply.code(504).send({ error: 'Request timeout - please try again' });
+        }
+      }
+      
+      return reply.internalServerError();
+    }
   });
 }
