@@ -2,24 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../features/activity/presentation/activity_page.dart';
+import '../../features/favorites/presentation/favorites_page.dart';
+import '../../features/channels/presentation/channel_programs_page.dart';
 import '../../features/channels/presentation/channels_page.dart';
 import '../../features/home/presentation/home_shell.dart';
 import '../../features/onboarding/presentation/onboarding_page.dart';
 import '../../features/onboarding/providers/onboarding_providers.dart';
-import '../../features/programs/presentation/program_schedule_page.dart';
+import '../../features/programs/presentation/program_detail_page.dart';
 import '../../features/settings/presentation/settings_page.dart';
+import '../../features/activity/presentation/activity_page.dart';
 
 final _rootNavigatorKey =
     GlobalKey<NavigatorState>(debugLabel: 'rootNavigator');
 final _channelsNavigatorKey =
     GlobalKey<NavigatorState>(debugLabel: 'channelsNavigator');
-final _scheduleNavigatorKey =
-    GlobalKey<NavigatorState>(debugLabel: 'scheduleNavigator');
-final _activityNavigatorKey =
-    GlobalKey<NavigatorState>(debugLabel: 'activityNavigator');
+final _favoritesNavigatorKey =
+    GlobalKey<NavigatorState>(debugLabel: 'favoritesNavigator');
 final _settingsNavigatorKey =
     GlobalKey<NavigatorState>(debugLabel: 'settingsNavigator');
+final _activityNavigatorKey =
+    GlobalKey<NavigatorState>(debugLabel: 'activityNavigator');
 
 final routerNotifierProvider = Provider<RouterNotifier>((ref) {
   final notifier = RouterNotifier(ref);
@@ -32,7 +34,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
-    initialLocation: '/onboarding',
+    initialLocation: '/home/channels', // Start od razu na listę kanałów (jak w TELEMAGAZYN)
     refreshListenable: notifier,
     redirect: notifier.handleRedirect,
     routes: [
@@ -40,6 +42,34 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/onboarding',
         name: OnboardingPage.routeName,
         builder: (context, state) => const OnboardingPage(),
+      ),
+      GoRoute(
+        path: '/channels/:channelId/programs',
+        name: ChannelProgramsPage.routeName,
+        parentNavigatorKey: _rootNavigatorKey,
+        pageBuilder: (context, state) {
+          final channelId = state.pathParameters['channelId']!;
+          return MaterialPage(
+            key: state.pageKey,
+            child: ChannelProgramsPage(channelId: channelId),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/programs/:programId',
+        name: ProgramDetailPage.routeName,
+        parentNavigatorKey: _rootNavigatorKey,
+        pageBuilder: (context, state) {
+          final programId = state.pathParameters['programId']!;
+          final eventId = state.uri.queryParameters['eventId'];
+          return MaterialPage(
+            key: state.pageKey,
+            child: ProgramDetailPage(
+              programId: programId,
+              eventId: eventId,
+            ),
+          );
+        },
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
@@ -58,13 +88,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             ],
           ),
           StatefulShellBranch(
-            navigatorKey: _scheduleNavigatorKey,
+            navigatorKey: _favoritesNavigatorKey,
             routes: [
               GoRoute(
-                path: '/home/schedule',
-                name: ProgramSchedulePage.routeName,
+                path: '/home/favorites',
+                name: FavoritesPage.routeName,
                 pageBuilder: (context, state) => const NoTransitionPage(
-                  child: ProgramSchedulePage(),
+                  child: FavoritesPage(),
                 ),
               ),
             ],
@@ -110,13 +140,12 @@ class RouterNotifier extends ChangeNotifier {
   final Ref ref;
 
   String? handleRedirect(BuildContext context, GoRouterState state) {
-    final completed = ref.read(onboardingCompletedProvider);
+    // Onboarding jest opcjonalny - aplikacja startuje od razu na listę kanałów
+    // Jeśli użytkownik chce zobaczyć onboarding, może do niego wrócić
     final goingOnboarding = state.matchedLocation == '/onboarding';
-
-    if (!completed && !goingOnboarding) {
-      return '/onboarding';
-    }
-
+    final completed = ref.read(onboardingCompletedProvider);
+    
+    // Jeśli użytkownik ukończył onboarding i próbuje do niego wrócić, przekieruj na kanały
     if (completed && goingOnboarding) {
       return '/home/channels';
     }

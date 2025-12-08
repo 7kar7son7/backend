@@ -44,3 +44,16 @@ class PointSummaryDto with _$PointSummaryDto {
       _$PointSummaryDtoFromJson(json);
 }
 
+@freezed
+class LeaderboardEntryDto with _$LeaderboardEntryDto {
+  const factory LeaderboardEntryDto({
+    required String deviceId,
+    required int totalPoints,
+    required int streakLength,
+    DateTime? lastActive,
+  }) = _LeaderboardEntryDto;
+
+  factory LeaderboardEntryDto.fromJson(Map<String, dynamic> json) =>
+      _$LeaderboardEntryDtoFromJson(json);
+}
+

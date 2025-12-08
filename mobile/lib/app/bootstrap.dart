@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/services/fcm_service.dart';
 import '../core/services/local_notifications_service.dart';
+import '../core/services/reminder_service.dart';
 import '../core/services/timezone_service.dart';
 import '../firebase_options.dart';
 import 'app.dart';
@@ -16,6 +17,9 @@ Future<void> bootstrap() async {
   await TimezoneService.initialize();
   await _initializeFirebase();
   await LocalNotificationsService.initialize();
+  
+  // Inicjalizuj dzienną przypominajkę
+  await ReminderService.initializeDailyReminder();
 
   runApp(const ProviderScope(child: App()));
 }

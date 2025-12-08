@@ -31,13 +31,13 @@ class HomeShell extends ConsumerWidget {
             label: 'Kanały',
           ),
           NavigationDestination(
-            icon: Icon(Icons.view_timeline_outlined),
-            selectedIcon: Icon(Icons.view_timeline),
-            label: 'Program',
+            icon: Icon(Icons.favorite_border),
+            selectedIcon: Icon(Icons.favorite),
+            label: 'Ulubione',
           ),
           NavigationDestination(
-            icon: Icon(Icons.workspace_premium_outlined),
-            selectedIcon: Icon(Icons.workspace_premium),
+            icon: Icon(Icons.emoji_events_outlined),
+            selectedIcon: Icon(Icons.emoji_events),
             label: 'Aktywność',
           ),
           NavigationDestination(

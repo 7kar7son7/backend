@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../shared/widgets/channel_logo.dart';
 import '../../channels/data/channel_api.dart';
@@ -170,6 +171,34 @@ class _SettingsContent extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 24),
+        _SectionHeader(title: 'Aktywność i społeczność'),
+        const SizedBox(height: 12),
+        _SettingsCard(
+          child: ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.emoji_events,
+                color: Theme.of(context).colorScheme.primary,
+                size: 24,
+              ),
+            ),
+            title: const Text(
+              'Punkty i ranking',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text('Zobacz swoje punkty, odznaki i ranking społecznościowy'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              context.go('/home/activity');
+            },
+          ),
+        ),
+        const SizedBox(height: 24),
         _SectionHeader(title: 'Preferowane kanały'),
         const SizedBox(height: 12),
         channelsAsync.when(
@@ -242,7 +271,7 @@ class _SettingsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
@@ -268,7 +297,7 @@ class _SectionHeader extends StatelessWidget {
       title,
       style: Theme.of(context).textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w700,
-            color: const Color(0xFF1C1F2E),
+            color: Theme.of(context).colorScheme.onSurface,
           ),
     );
   }

@@ -196,8 +196,8 @@ class _ProgramSchedulePageState extends ConsumerState<ProgramSchedulePage> {
                               onFollowToggle: () async {
                                 final notifier = ref.read(programScheduleNotifierProvider.notifier);
                                 try {
-                                  await notifier.toggleFollowChannel(
-                                    entry.channelId,
+                                  await notifier.toggleFollowProgram(
+                                    entry.program.id,
                                     !entry.isFollowed,
                                   );
                                   if (context.mounted) {
@@ -205,8 +205,8 @@ class _ProgramSchedulePageState extends ConsumerState<ProgramSchedulePage> {
                                       SnackBar(
                                         content: Text(
                                           !entry.isFollowed
-                                              ? 'Zacząłeś śledzić ${entry.channelName}'
-                                              : 'Przestałeś śledzić ${entry.channelName}',
+                                              ? 'Zacząłeś śledzić program "${entry.program.title}"'
+                                              : 'Przestałeś śledzić program "${entry.program.title}"',
                                         ),
                                         duration: const Duration(seconds: 2),
                                       ),
@@ -217,7 +217,7 @@ class _ProgramSchedulePageState extends ConsumerState<ProgramSchedulePage> {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Text(
-                                          'Nie udało się ${!entry.isFollowed ? 'śledzić' : 'odśledzić'} kanału: $error',
+                                          'Nie udało się ${!entry.isFollowed ? 'śledzić' : 'odśledzić'} programu: $error',
                                         ),
                                         backgroundColor: Theme.of(context).colorScheme.error,
                                         duration: const Duration(seconds: 3),
@@ -478,12 +478,13 @@ class _ProgramTile extends StatelessWidget {
           const SizedBox(height: 18),
           FilledButton.icon(
             onPressed: onCreateEvent,
-            icon: const Icon(Icons.bolt_rounded),
-            label: const Text('Zgłoś wydarzenie'),
+            icon: const Icon(Icons.stop_circle),
+            label: const Text('KONIEC REKLAM'),
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFDC2626),
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              minimumSize: const Size(double.infinity, 0),
             ),
           ),
         ],
@@ -643,11 +644,11 @@ Future<void> _showCreateEventDialog({
       return AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: Text(
-          'Zgłosić wydarzenie?',
+          'KONIEC REKLAM?',
           style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
         ),
         content: Text(
-          'Powiadomimy obserwujących, że program już trwa. Czy na pewno chcesz wysłać zgłoszenie?',
+          'Powiadomimy obserwujących, że reklamy się skończyły. Czy na pewno chcesz wysłać zgłoszenie?',
           style: theme.textTheme.bodyMedium,
         ),
         actions: [
@@ -669,7 +670,7 @@ Future<void> _showCreateEventDialog({
       await onConfirm();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Zgłoszenie wysłane do obserwujących.')),
+          const SnackBar(content: Text('Zgłoszenie "KONIEC REKLAM" wysłane do obserwujących.')),
         );
       }
     } catch (error) {

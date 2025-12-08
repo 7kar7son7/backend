@@ -489,3 +489,209 @@ abstract class _PointSummaryDto implements PointSummaryDto {
   _$$PointSummaryDtoImplCopyWith<_$PointSummaryDtoImpl> get copyWith =>
       throw _privateConstructorUsedError;
 }
+
+LeaderboardEntryDto _$LeaderboardEntryDtoFromJson(Map<String, dynamic> json) {
+  return _LeaderboardEntryDto.fromJson(json);
+}
+
+/// @nodoc
+mixin _$LeaderboardEntryDto {
+  String get deviceId => throw _privateConstructorUsedError;
+  int get totalPoints => throw _privateConstructorUsedError;
+  int get streakLength => throw _privateConstructorUsedError;
+  DateTime? get lastActive => throw _privateConstructorUsedError;
+
+  Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
+  @JsonKey(ignore: true)
+  $LeaderboardEntryDtoCopyWith<LeaderboardEntryDto> get copyWith =>
+      throw _privateConstructorUsedError;
+}
+
+/// @nodoc
+abstract class $LeaderboardEntryDtoCopyWith<$Res> {
+  factory $LeaderboardEntryDtoCopyWith(
+          LeaderboardEntryDto value, $Res Function(LeaderboardEntryDto) then) =
+      _$LeaderboardEntryDtoCopyWithImpl<$Res, LeaderboardEntryDto>;
+  @useResult
+  $Res call(
+      {String deviceId,
+      int totalPoints,
+      int streakLength,
+      DateTime? lastActive});
+}
+
+/// @nodoc
+class _$LeaderboardEntryDtoCopyWithImpl<$Res, $Val extends LeaderboardEntryDto>
+    implements $LeaderboardEntryDtoCopyWith<$Res> {
+  _$LeaderboardEntryDtoCopyWithImpl(this._value, this._then);
+
+  // ignore: unused_field
+  final $Val _value;
+  // ignore: unused_field
+  final $Res Function($Val) _then;
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? deviceId = null,
+    Object? totalPoints = null,
+    Object? streakLength = null,
+    Object? lastActive = freezed,
+  }) {
+    return _then(_value.copyWith(
+      deviceId: null == deviceId
+          ? _value.deviceId
+          : deviceId // ignore: cast_nullable_to_non_nullable
+              as String,
+      totalPoints: null == totalPoints
+          ? _value.totalPoints
+          : totalPoints // ignore: cast_nullable_to_non_nullable
+              as int,
+      streakLength: null == streakLength
+          ? _value.streakLength
+          : streakLength // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastActive: freezed == lastActive
+          ? _value.lastActive
+          : lastActive // ignore: cast_nullable_to_non_nullable
+              as DateTime?,
+    ) as $Val);
+  }
+}
+
+/// @nodoc
+abstract class _$$LeaderboardEntryDtoImplCopyWith<$Res>
+    implements $LeaderboardEntryDtoCopyWith<$Res> {
+  factory _$$LeaderboardEntryDtoImplCopyWith(_$LeaderboardEntryDtoImpl value,
+          $Res Function(_$LeaderboardEntryDtoImpl) then) =
+      __$$LeaderboardEntryDtoImplCopyWithImpl<$Res>;
+  @override
+  @useResult
+  $Res call(
+      {String deviceId,
+      int totalPoints,
+      int streakLength,
+      DateTime? lastActive});
+}
+
+/// @nodoc
+class __$$LeaderboardEntryDtoImplCopyWithImpl<$Res>
+    extends _$LeaderboardEntryDtoCopyWithImpl<$Res, _$LeaderboardEntryDtoImpl>
+    implements _$$LeaderboardEntryDtoImplCopyWith<$Res> {
+  __$$LeaderboardEntryDtoImplCopyWithImpl(_$LeaderboardEntryDtoImpl _value,
+      $Res Function(_$LeaderboardEntryDtoImpl) _then)
+      : super(_value, _then);
+
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({
+    Object? deviceId = null,
+    Object? totalPoints = null,
+    Object? streakLength = null,
+    Object? lastActive = freezed,
+  }) {
+    return _then(_$LeaderboardEntryDtoImpl(
+      deviceId: null == deviceId
+          ? _value.deviceId
+          : deviceId // ignore: cast_nullable_to_non_nullable
+              as String,
+      totalPoints: null == totalPoints
+          ? _value.totalPoints
+          : totalPoints // ignore: cast_nullable_to_non_nullable
+              as int,
+      streakLength: null == streakLength
+          ? _value.streakLength
+          : streakLength // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastActive: freezed == lastActive
+          ? _value.lastActive
+          : lastActive // ignore: cast_nullable_to_non_nullable
+              as DateTime?,
+    ));
+  }
+}
+
+/// @nodoc
+@JsonSerializable()
+class _$LeaderboardEntryDtoImpl implements _LeaderboardEntryDto {
+  const _$LeaderboardEntryDtoImpl(
+      {required this.deviceId,
+      required this.totalPoints,
+      required this.streakLength,
+      this.lastActive});
+
+  factory _$LeaderboardEntryDtoImpl.fromJson(Map<String, dynamic> json) =>
+      _$$LeaderboardEntryDtoImplFromJson(json);
+
+  @override
+  final String deviceId;
+  @override
+  final int totalPoints;
+  @override
+  final int streakLength;
+  @override
+  final DateTime? lastActive;
+
+  @override
+  String toString() {
+    return 'LeaderboardEntryDto(deviceId: $deviceId, totalPoints: $totalPoints, streakLength: $streakLength, lastActive: $lastActive)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$LeaderboardEntryDtoImpl &&
+            (identical(other.deviceId, deviceId) ||
+                other.deviceId == deviceId) &&
+            (identical(other.totalPoints, totalPoints) ||
+                other.totalPoints == totalPoints) &&
+            (identical(other.streakLength, streakLength) ||
+                other.streakLength == streakLength) &&
+            (identical(other.lastActive, lastActive) ||
+                other.lastActive == lastActive));
+  }
+
+  @JsonKey(ignore: true)
+  @override
+  int get hashCode =>
+      Object.hash(runtimeType, deviceId, totalPoints, streakLength, lastActive);
+
+  @JsonKey(ignore: true)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$LeaderboardEntryDtoImplCopyWith<_$LeaderboardEntryDtoImpl> get copyWith =>
+      __$$LeaderboardEntryDtoImplCopyWithImpl<_$LeaderboardEntryDtoImpl>(
+          this, _$identity);
+
+  @override
+  Map<String, dynamic> toJson() {
+    return _$$LeaderboardEntryDtoImplToJson(
+      this,
+    );
+  }
+}
+
+abstract class _LeaderboardEntryDto implements LeaderboardEntryDto {
+  const factory _LeaderboardEntryDto(
+      {required final String deviceId,
+      required final int totalPoints,
+      required final int streakLength,
+      final DateTime? lastActive}) = _$LeaderboardEntryDtoImpl;
+
+  factory _LeaderboardEntryDto.fromJson(Map<String, dynamic> json) =
+      _$LeaderboardEntryDtoImpl.fromJson;
+
+  @override
+  String get deviceId;
+  @override
+  int get totalPoints;
+  @override
+  int get streakLength;
+  @override
+  DateTime? get lastActive;
+  @override
+  @JsonKey(ignore: true)
+  _$$LeaderboardEntryDtoImplCopyWith<_$LeaderboardEntryDtoImpl> get copyWith =>
+      throw _privateConstructorUsedError;
+}

@@ -59,3 +59,23 @@ Map<String, dynamic> _$$PointSummaryDtoImplToJson(
       'lastActive': instance.lastActive?.toIso8601String(),
       'entries': instance.entries,
     };
+
+_$LeaderboardEntryDtoImpl _$$LeaderboardEntryDtoImplFromJson(
+        Map<String, dynamic> json) =>
+    _$LeaderboardEntryDtoImpl(
+      deviceId: json['deviceId'] as String,
+      totalPoints: (json['totalPoints'] as num).toInt(),
+      streakLength: (json['streakLength'] as num).toInt(),
+      lastActive: json['lastActive'] == null
+          ? null
+          : DateTime.parse(json['lastActive'] as String),
+    );
+
+Map<String, dynamic> _$$LeaderboardEntryDtoImplToJson(
+        _$LeaderboardEntryDtoImpl instance) =>
+    <String, dynamic>{
+      'deviceId': instance.deviceId,
+      'totalPoints': instance.totalPoints,
+      'streakLength': instance.streakLength,
+      'lastActive': instance.lastActive?.toIso8601String(),
+    };

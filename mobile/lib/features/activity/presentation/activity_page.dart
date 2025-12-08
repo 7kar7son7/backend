@@ -6,6 +6,8 @@ import '../../events/application/events_notifier.dart';
 import '../../events/data/event_dto.dart';
 import '../../points/application/points_providers.dart';
 import '../../points/data/point_summary_dto.dart';
+import '../../../../core/storage/device_id_provider.dart';
+import '../../../shared/widgets/event_confirmation_dialog.dart';
 
 class ActivityPage extends ConsumerWidget {
   const ActivityPage({super.key});
@@ -61,6 +63,8 @@ class ActivityPage extends ConsumerWidget {
           _ActiveEventsSection(events: events),
           const SizedBox(height: 24),
           _PointsSection(summary: summary),
+          const SizedBox(height: 24),
+          _LeaderboardSection(),
         ],
       ),
     );
@@ -176,12 +180,26 @@ class _EventCard extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
-              Text(
-                _statusLabel(event.status),
-                style: theme.textTheme.labelSmall?.copyWith(
+              // Pokaż status i liczbę potwierdzeń
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    _statusLabel(event.status),
+                    style: theme.textTheme.labelSmall?.copyWith(
                       color: _statusColor(context, event.status),
                       fontWeight: FontWeight.w600,
                     ),
+                  ),
+                  if (event.followerCountLimit != null)
+                    Text(
+                      '${event.confirmations.length}/${event.followerCountLimit} potwierdzeń',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: const Color(0xFF6C738A),
+                        fontSize: 11,
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
@@ -203,41 +221,80 @@ class _EventCard extends ConsumerWidget {
             ),
           ],
           const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: () => _showConfirmEventDialog(
-              context: context,
-              title: event.program.title,
-              onChoice: (choice) async {
-                try {
-                  await notifier.confirmEvent(event.id, choice);
-                  ref.invalidate(pointsSummaryProvider);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(choice == EventChoiceDto.OPTION1
-                            ? 'Dziękujemy za potwierdzenie!'
-                            : 'Zgłoszenie oznaczone jako niepotwierdzone.'),
+          Builder(
+            builder: (context) {
+              // Sprawdź czy użytkownik już potwierdził to wydarzenie
+              final deviceId = ref.watch(deviceIdProvider);
+              final hasConfirmed = deviceId != null && event.confirmations.any(
+                (conf) => conf.deviceId == deviceId,
+              );
+              
+              if (hasConfirmed) {
+                // Użytkownik już potwierdził - pokaż komunikat
+                return Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.check_circle, color: Colors.green.shade600, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Wydarzenie potwierdzone',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.green.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    );
-                  }
-                } catch (error) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Nie udało się wysłać potwierdzenia: $error'),
-                      ),
-                    );
-                  }
-                }
-              },
-            ),
-            icon: const Icon(Icons.how_to_vote_rounded),
-            label: const Text('Potwierdź wydarzenie'),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-            ),
+                    ],
+                  ),
+                );
+              }
+              
+              // Użytkownik jeszcze nie potwierdził - pokaż przycisk
+              return FilledButton.icon(
+                onPressed: () => _showConfirmEventDialog(
+                  context: context,
+                  title: event.program.title,
+                  onChoice: (choice) async {
+                    try {
+                      await notifier.confirmEvent(event.id, choice);
+                      // Odśwież listę wydarzeń i punkty
+                      ref.invalidate(eventsNotifierProvider);
+                      ref.invalidate(pointsSummaryProvider);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(choice == EventChoiceDto.OPTION1
+                                ? 'Dziękujemy za potwierdzenie końca reklam!'
+                                : 'Zgłoszenie oznaczone jako niepotwierdzone.'),
+                          ),
+                        );
+                      }
+                    } catch (error) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Nie udało się wysłać potwierdzenia: $error'),
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+                icon: const Icon(Icons.how_to_vote_rounded),
+                label: const Text('Potwierdź koniec reklam'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFDC2626),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -375,6 +432,76 @@ class _PointsSummaryCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          // Odznaki
+          if (totalPoints >= 250 || totalPoints >= 500) ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (totalPoints >= 250)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.star,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Aktywny',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (totalPoints >= 500)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.emoji_events,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Mistrz Wydarzeń',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
           Wrap(
             spacing: 12,
             runSpacing: 8,
@@ -654,34 +781,159 @@ Future<void> _showConfirmEventDialog({
   required String title,
   required Future<void> Function(EventChoiceDto) onChoice,
 }) async {
-  final result = await showDialog<EventChoiceDto>(
+  final result = await EventConfirmationDialog.show(
     context: context,
-    builder: (context) {
-      return AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Text(
-          'Czy wydarzenie trwa?',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        content: Text(
-          'Potwierdź proszę, czy audycja "$title" rzeczywiście się odbywa.',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(EventChoiceDto.OPTION2),
-            child: const Text('Nie / Fałszywy alarm'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(EventChoiceDto.OPTION1),
-            child: const Text('Tak, dzieje się'),
-          ),
-        ],
-      );
-    },
+    title: title,
   );
 
   if (result != null) {
     await onChoice(result);
+  }
+}
+
+class _LeaderboardSection extends ConsumerWidget {
+  const _LeaderboardSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final leaderboardAsync = ref.watch(leaderboardProvider);
+    final deviceId = ref.watch(deviceIdProvider);
+    final theme = Theme.of(context);
+
+    return leaderboardAsync.when(
+      data: (leaderboard) {
+        if (leaderboard.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 22,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.emoji_events,
+                    color: theme.colorScheme.primary,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Ranking społecznościowy',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              ...leaderboard.asMap().entries.map((entry) {
+                final index = entry.key;
+                final user = entry.value;
+                final isCurrentUser = user.deviceId == deviceId;
+                final position = index + 1;
+
+                return Container(
+                  margin: EdgeInsets.only(bottom: index < leaderboard.length - 1 ? 12 : 0),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isCurrentUser
+                        ? theme.colorScheme.primaryContainer.withOpacity(0.3)
+                        : theme.colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(12),
+                    border: isCurrentUser
+                        ? Border.all(
+                            color: theme.colorScheme.primary,
+                            width: 2,
+                          )
+                        : null,
+                  ),
+                  child: Row(
+                    children: [
+                      // Pozycja
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: position <= 3
+                              ? theme.colorScheme.primary
+                              : theme.colorScheme.surfaceContainerHighest,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Text(
+                            '$position',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: position <= 3
+                                  ? Colors.white
+                                  : theme.colorScheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Ikona użytkownika
+                      Icon(
+                        Icons.person,
+                        size: 20,
+                        color: theme.colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                      const SizedBox(width: 8),
+                      // Device ID (skrócony)
+                      Expanded(
+                        child: Text(
+                          isCurrentUser
+                              ? 'Ty (${user.deviceId.substring(0, 8)}...)'
+                              : '${user.deviceId.substring(0, 8)}...',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: isCurrentUser ? FontWeight.w600 : FontWeight.normal,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                      // Punkty
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '${user.totalPoints}',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                          if (user.streakLength > 0)
+                            Text(
+                              '🔥 ${user.streakLength}',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => const SizedBox.shrink(),
+    );
   }
 }

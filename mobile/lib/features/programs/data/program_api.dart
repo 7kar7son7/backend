@@ -18,9 +18,26 @@ abstract class ProgramApi {
     @Query('limit') int? limit,
     @Query('offset') int? offset,
   });
+
+  @GET('/programs/{programId}')
+  Future<ApiResponse<ProgramDto>> getProgram(@Path() String programId);
+
+  @GET('/programs/search')
+  Future<ApiResponse<List<ProgramDto>>> searchPrograms(
+    @Query('search') String search, {
+    @Query('limit') int? limit,
+    @Query('offset') int? offset,
+  });
 }
 
 final programApiProvider = Provider.autoDispose<ProgramApi>((ref) {
   final dio = ref.watch(dioProvider);
   return ProgramApi(dio);
+});
+
+// Provider dla pojedynczego programu - cache'uje dane i zapobiega mruganiu
+final programProvider = FutureProvider.autoDispose.family<ProgramDto, String>((ref, programId) async {
+  final programApi = ref.watch(programApiProvider);
+  final response = await programApi.getProgram(programId);
+  return response.data;
 });

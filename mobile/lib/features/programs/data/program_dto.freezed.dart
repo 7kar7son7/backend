@@ -28,7 +28,9 @@ mixin _$ProgramDto {
   String? get description => throw _privateConstructorUsedError;
   int? get seasonNumber => throw _privateConstructorUsedError;
   int? get episodeNumber => throw _privateConstructorUsedError;
+  @DateTimeLocalConverter()
   DateTime get startsAt => throw _privateConstructorUsedError;
+  @DateTimeLocalConverter()
   DateTime? get endsAt => throw _privateConstructorUsedError;
   String? get imageUrl => throw _privateConstructorUsedError;
   List<String> get tags => throw _privateConstructorUsedError;
@@ -54,8 +56,8 @@ abstract class $ProgramDtoCopyWith<$Res> {
       String? description,
       int? seasonNumber,
       int? episodeNumber,
-      DateTime startsAt,
-      DateTime? endsAt,
+      @DateTimeLocalConverter() DateTime startsAt,
+      @DateTimeLocalConverter() DateTime? endsAt,
       String? imageUrl,
       List<String> tags});
 }
@@ -156,8 +158,8 @@ abstract class _$$ProgramDtoImplCopyWith<$Res>
       String? description,
       int? seasonNumber,
       int? episodeNumber,
-      DateTime startsAt,
-      DateTime? endsAt,
+      @DateTimeLocalConverter() DateTime startsAt,
+      @DateTimeLocalConverter() DateTime? endsAt,
       String? imageUrl,
       List<String> tags});
 }
@@ -251,8 +253,8 @@ class _$ProgramDtoImpl implements _ProgramDto {
       this.description,
       this.seasonNumber,
       this.episodeNumber,
-      required this.startsAt,
-      this.endsAt,
+      @DateTimeLocalConverter() required this.startsAt,
+      @DateTimeLocalConverter() this.endsAt,
       this.imageUrl,
       final List<String> tags = const <String>[]})
       : _tags = tags;
@@ -277,8 +279,10 @@ class _$ProgramDtoImpl implements _ProgramDto {
   @override
   final int? episodeNumber;
   @override
+  @DateTimeLocalConverter()
   final DateTime startsAt;
   @override
+  @DateTimeLocalConverter()
   final DateTime? endsAt;
   @override
   final String? imageUrl;
@@ -364,8 +368,8 @@ abstract class _ProgramDto implements ProgramDto {
       final String? description,
       final int? seasonNumber,
       final int? episodeNumber,
-      required final DateTime startsAt,
-      final DateTime? endsAt,
+      @DateTimeLocalConverter() required final DateTime startsAt,
+      @DateTimeLocalConverter() final DateTime? endsAt,
       final String? imageUrl,
       final List<String> tags}) = _$ProgramDtoImpl;
 
@@ -389,8 +393,10 @@ abstract class _ProgramDto implements ProgramDto {
   @override
   int? get episodeNumber;
   @override
+  @DateTimeLocalConverter()
   DateTime get startsAt;
   @override
+  @DateTimeLocalConverter()
   DateTime? get endsAt;
   @override
   String? get imageUrl;

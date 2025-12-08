@@ -33,15 +33,15 @@ class ProgramScheduleNotifier
     _restartAutoRefresh();
   }
 
-  Future<void> toggleFollowChannel(String channelId, bool follow) async {
+  Future<void> toggleFollowProgram(String programId, bool follow) async {
     try {
       if (follow) {
         await _followApi.follow(
-          FollowRequest(type: FollowTypeDto.CHANNEL, targetId: channelId),
+          FollowRequest(type: FollowTypeDto.PROGRAM, targetId: programId),
         );
       } else {
         await _followApi.unfollow(
-          FollowRequest(type: FollowTypeDto.CHANNEL, targetId: channelId),
+          FollowRequest(type: FollowTypeDto.PROGRAM, targetId: programId),
         );
       }
 
@@ -81,10 +81,9 @@ class ProgramScheduleNotifier
     }
     
     final followsResp = await _followApi.getFollows();
-    final followedChannelIds = followsResp.data
-        .where((f) => f.type == FollowTypeDto.CHANNEL)
-        .map((f) => f.channel?.id)
-        .whereType<String>()
+    final followedProgramIds = followsResp.data
+        .where((f) => f.type == FollowTypeDto.PROGRAM && f.program != null)
+        .map((f) => f.program!.id)
         .toSet();
 
     // Używamy channelLogoUrl z API - nie trzeba już pobierać kanałów osobno!
@@ -94,7 +93,7 @@ class ProgramScheduleNotifier
         channelName: program.channelName,
         channelLogoUrl: program.channelLogoUrl,
         program: program,
-        isFollowed: followedChannelIds.contains(program.channelId),
+        isFollowed: followedProgramIds.contains(program.id), // Śledzimy program, nie kanał
       );
     }).toList();
     // Sortowanie nie jest już potrzebne - backend zwraca już posortowane programy
@@ -102,7 +101,7 @@ class ProgramScheduleNotifier
     return ProgramScheduleState(
       selectedDate: DateTime(day.year, day.month, day.day),
       programs: scheduled,
-      hasChannelFollows: followedChannelIds.isNotEmpty,
+      hasChannelFollows: false, // Nie używamy już śledzenia kanałów
       hasMore: programsResp.data.length == limit, // Jeśli zwrócono tyle ile limit, może być więcej
     );
   }

@@ -12,7 +12,7 @@ class AppConfig {
   /// UWAGA: Na produkcji NIE używaj localhost - to nie zadziała!
   static const apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:3001',
+    defaultValue: 'https://backend.devstudioit.app',
   );
 }
 

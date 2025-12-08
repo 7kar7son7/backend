@@ -10,3 +10,10 @@ final pointsSummaryProvider =
   return response.data;
 });
 
+final leaderboardProvider =
+    FutureProvider.autoDispose<List<LeaderboardEntryDto>>((ref) async {
+  final api = ref.watch(pointsApiProvider);
+  final response = await api.getLeaderboard(limit: 50);
+  return response.data;
+});
+

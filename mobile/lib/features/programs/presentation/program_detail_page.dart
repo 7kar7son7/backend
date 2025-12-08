@@ -812,7 +812,8 @@ class _ProgramDetailPageState extends ConsumerState<ProgramDetailPage> {
                                   label: const Text('KONIEC REKLAM'),
                                   style: FilledButton.styleFrom(
                                     backgroundColor: const Color(0xFFDC2626),
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                                    minimumSize: const Size(double.infinity, 0),
                                   ),
                                 ),
                                 const SizedBox(height: 24),

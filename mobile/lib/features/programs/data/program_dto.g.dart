@@ -16,10 +16,10 @@ _$ProgramDtoImpl _$$ProgramDtoImplFromJson(Map<String, dynamic> json) =>
       description: json['description'] as String?,
       seasonNumber: (json['seasonNumber'] as num?)?.toInt(),
       episodeNumber: (json['episodeNumber'] as num?)?.toInt(),
-      startsAt: DateTime.parse(json['startsAt'] as String),
-      endsAt: json['endsAt'] == null
-          ? null
-          : DateTime.parse(json['endsAt'] as String),
+      startsAt:
+          const DateTimeLocalConverter().fromJson(json['startsAt'] as String),
+      endsAt: _$JsonConverterFromJson<String, DateTime>(
+          json['endsAt'], const DateTimeLocalConverter().fromJson),
       imageUrl: json['imageUrl'] as String?,
       tags:
           (json['tags'] as List<dynamic>?)?.map((e) => e as String).toList() ??
@@ -36,8 +36,21 @@ Map<String, dynamic> _$$ProgramDtoImplToJson(_$ProgramDtoImpl instance) =>
       'description': instance.description,
       'seasonNumber': instance.seasonNumber,
       'episodeNumber': instance.episodeNumber,
-      'startsAt': instance.startsAt.toIso8601String(),
-      'endsAt': instance.endsAt?.toIso8601String(),
+      'startsAt': const DateTimeLocalConverter().toJson(instance.startsAt),
+      'endsAt': _$JsonConverterToJson<String, DateTime>(
+          instance.endsAt, const DateTimeLocalConverter().toJson),
       'imageUrl': instance.imageUrl,
       'tags': instance.tags,
     };
+
+Value? _$JsonConverterFromJson<Json, Value>(
+  Object? json,
+  Value? Function(Json json) fromJson,
+) =>
+    json == null ? null : fromJson(json as Json);
+
+Json? _$JsonConverterToJson<Json, Value>(
+  Value? value,
+  Json? Function(Value value) toJson,
+) =>
+    value == null ? null : toJson(value);

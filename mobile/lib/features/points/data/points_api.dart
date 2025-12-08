@@ -15,6 +15,11 @@ abstract class PointsApi {
   @GET('/points/me')
   Future<ApiResponse<PointSummaryDto?>> getMyPoints();
 
+  @GET('/points/leaderboard')
+  Future<ApiResponse<List<LeaderboardEntryDto>>> getLeaderboard({
+    @Query('limit') int? limit,
+  });
+
   @POST('/points/manual')
   Future<void> addManualPoints(
     @Body() ManualPointsRequest body,

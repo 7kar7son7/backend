@@ -3,6 +3,23 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'program_dto.freezed.dart';
 part 'program_dto.g.dart';
 
+class DateTimeLocalConverter implements JsonConverter<DateTime, String> {
+  const DateTimeLocalConverter();
+
+  @override
+  DateTime fromJson(String json) {
+    // Parsuj datę z API (UTC) i konwertuj na lokalną
+    final utcDate = DateTime.parse(json);
+    return utcDate.toLocal();
+  }
+
+  @override
+  String toJson(DateTime object) {
+    // Konwertuj lokalną datę z powrotem na UTC dla API
+    return object.toUtc().toIso8601String();
+  }
+}
+
 @freezed
 class ProgramDto with _$ProgramDto {
   const factory ProgramDto({
@@ -14,8 +31,8 @@ class ProgramDto with _$ProgramDto {
     String? description,
     int? seasonNumber,
     int? episodeNumber,
-    required DateTime startsAt,
-    DateTime? endsAt,
+    @DateTimeLocalConverter() required DateTime startsAt,
+    @DateTimeLocalConverter() DateTime? endsAt,
     String? imageUrl,
     @Default(<String>[]) List<String> tags,
   }) = _ProgramDto;
