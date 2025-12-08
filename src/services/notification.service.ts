@@ -36,6 +36,7 @@ export class NotificationService {
     await this.pushNotification.send(deviceIds, {
       title: 'KONIEC REKLAM',
       body: notificationBody,
+      image: payload.channelLogoUrl ?? undefined,
       data: {
         type: 'EVENT_STARTED',
         eventId: payload.eventId,
@@ -292,5 +293,6 @@ type ReminderPayload = {
   channelId: string;
   programTitle: string;
   startsAt: string;
+  channelLogoUrl?: string | null;
 };
 

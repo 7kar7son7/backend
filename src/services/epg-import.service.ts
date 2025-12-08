@@ -166,11 +166,13 @@ export class EpgImportService {
 
           const updateData: Prisma.ProgramUpdateInput = {
             title: program.title,
-            description: program.description ?? null,
+            // Aktualizuj description tylko jeśli EPG ma opis (nie nadpisuj istniejącego opisu na null)
+            ...(program.description != null ? { description: program.description } : {}),
             seasonNumber: program.season ?? null,
             episodeNumber: program.episode ?? null,
             startsAt,
-            imageUrl: program.image ?? null,
+            // Aktualizuj imageUrl tylko jeśli EPG ma obraz (nie nadpisuj istniejącego obrazu na null)
+            ...(program.image != null ? { imageUrl: program.image } : {}),
             tags: { set: program.tags ?? [] },
             channel: {
               connect: { id: channelRecord.id },

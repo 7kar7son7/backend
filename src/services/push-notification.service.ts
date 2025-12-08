@@ -10,6 +10,7 @@ import { chunkArray } from '../utils/array';
 export type PushMessage = {
   title: string;
   body: string;
+  image?: string;
   data?: Record<string, string>;
 };
 
@@ -150,6 +151,7 @@ export class PushNotificationService {
               notification: {
                 title: message.title,
                 body: message.body,
+                image: message.image,
               },
               data: message.data
                 ? Object.fromEntries(
@@ -160,6 +162,7 @@ export class PushNotificationService {
                 priority: 'high',
                 notification: {
                   sound: 'default',
+                  imageUrl: message.image,
                 },
               },
             },
@@ -232,8 +235,16 @@ export class PushNotificationService {
               title: message.title,
               body: message.body,
               sound: 'default',
+              image: message.image,
             },
             data: message.data ?? {},
+            android: message.image
+              ? {
+                  notification: {
+                    imageUrl: message.image,
+                  },
+                }
+              : undefined,
           }),
         });
 

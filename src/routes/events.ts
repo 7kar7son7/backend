@@ -197,6 +197,7 @@ export default async function eventsRoutes(app: FastifyInstance) {
             channelId: eventBefore.program.channelId,
             programTitle: channelName ? `${channelName}: ${programTitle}` : programTitle,
             startsAt: eventBefore.program.startsAt.toISOString(),
+            channelLogoUrl: eventBefore.program.channel?.logoUrl ?? null,
           };
 
           await notificationService.sendEventStartedNotification(recipients, payload);
