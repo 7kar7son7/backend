@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 
 import { env } from '../config/env';
-import { PushNotificationService } from './push-notification.service';
+import { PushNotificationService, type PushMessage } from './push-notification.service';
 
 export class NotificationService {
   constructor(private readonly prisma: PrismaClient, private readonly logger: FastifyBaseLogger) {
@@ -33,10 +33,9 @@ export class NotificationService {
       ? `${programTitle.substring(0, 47)}... - reklamy zakończone? Potwierdź!`
       : `${programTitle} - reklamy zakończone? Potwierdź!`;
     
-    await this.pushNotification.send(deviceIds, {
+    const message: PushMessage = {
       title: 'KONIEC REKLAM',
       body: notificationBody,
-      image: payload.channelLogoUrl ?? undefined,
       data: {
         type: 'EVENT_STARTED',
         eventId: payload.eventId,
@@ -44,7 +43,14 @@ export class NotificationService {
         channelId: payload.channelId,
         startsAt: payload.startsAt,
       },
-    });
+    };
+    
+    // Dodaj image tylko jeśli jest dostępne (nie przekazuj undefined)
+    if (payload.channelLogoUrl) {
+      message.image = payload.channelLogoUrl;
+    }
+    
+    await this.pushNotification.send(deviceIds, message);
   }
 
   async sendDailyReminder() {
