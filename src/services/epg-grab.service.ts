@@ -1,12 +1,75 @@
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
+import { access } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import type { FastifyBaseLogger } from 'fastify';
-import type { ExecOptions } from 'node:child_process';
 
 import { env } from '../config/env';
 
-const execAsync = promisify(exec);
+/**
+ * Sprawdza dostępność shella w systemie
+ */
+async function findAvailableShell(): Promise<string> {
+  const shells = ['/bin/sh', '/bin/bash', '/bin/ash', '/bin/zsh'];
+  
+  for (const shell of shells) {
+    try {
+      await access(shell, constants.F_OK);
+      return shell;
+    } catch {
+      // Shell nie istnieje, spróbuj następny
+      continue;
+    }
+  }
+  
+  // Jeśli żaden shell nie został znaleziony, zwróć domyślny
+  // Node.js spróbuje użyć systemowego domyślnego
+  return '/bin/sh';
+}
+
+/**
+ * Wykonuje komendę używając spawn zamiast exec
+ */
+function spawnAsync(
+  command: string,
+  options: { cwd: string; shell: string }
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    // Użyj spawn z shell: true i pełną komendą jako string
+    const child = spawn(command, {
+      cwd: options.cwd,
+      shell: options.shell,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    if (child.stdout) {
+      child.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+    }
+
+    if (child.stderr) {
+      child.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+    }
+
+    child.on('error', (error: Error) => {
+      reject(error);
+    });
+
+    child.on('close', (code: number | null) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(`Command failed with exit code ${code}: ${stderr || stdout}`));
+      }
+    });
+  });
+}
 
 export async function runConfiguredGrab(logger: FastifyBaseLogger) {
   const enabled = env.EPG_GRAB_ENABLED ?? false;
@@ -20,30 +83,26 @@ export async function runConfiguredGrab(logger: FastifyBaseLogger) {
   logger.info({ command, cwd: workingDir }, '🔄 Aktualizuję feed EPG (grab).');
 
   try {
-    // Użyj shell: true żeby Node.js automatycznie wybrał dostępny shell
-    // W Alpine może być /bin/ash, w innych systemach /bin/sh lub /bin/bash
-    // TypeScript wymusza string, ale true działa lepiej - używamy as any
-    const options: any = {
+    // Znajdź dostępny shell w systemie
+    const shell = await findAvailableShell();
+    logger.info({ shell }, '🔍 Używam shella');
+
+    const { stdout, stderr } = await spawnAsync(command, {
       cwd: workingDir,
-      maxBuffer: 1024 * 1024 * 20,
-      shell: true, // Node.js automatycznie wybierze dostępny shell
-    };
-    const { stdout, stderr } = await execAsync(command, options);
+      shell,
+    });
 
-    const stdoutStr = typeof stdout === 'string' ? stdout : String(stdout);
-    const stderrStr = typeof stderr === 'string' ? stderr : String(stderr);
-
-    if (stdoutStr.trim().length > 0) {
-      logger.info({ stdout: stdoutStr }, '📄 Wynik komendy grab (stdout)');
+    if (stdout.trim().length > 0) {
+      logger.info({ stdout }, '📄 Wynik komendy grab (stdout)');
     }
-    if (stderrStr.trim().length > 0) {
-      logger.warn({ stderr: stderrStr }, '⚠️ Wynik komendy grab (stderr)');
+    if (stderr.trim().length > 0) {
+      logger.warn({ stderr }, '⚠️ Wynik komendy grab (stderr)');
     }
 
     logger.info('✅ Feed EPG został odświeżony.');
     return true;
   } catch (error) {
-    logger.error({ err: error }, '❌ Nie udało się uruchomić komendy grab.' );
+    logger.error({ err: error }, '❌ Nie udało się uruchomić komendy grab.');
     throw error;
   }
 }
