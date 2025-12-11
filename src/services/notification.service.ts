@@ -95,15 +95,15 @@ export class NotificationService {
     const now = new Date();
     
     // 1. Przypomnienie 15 minut przed startem
-    // Sprawdź programy startujące za 15-16 minut (żeby powiadomienie przyszło dokładnie 15 min przed lub wcześniej)
+    // Sprawdź programy startujące za 14-15 minut (żeby powiadomienie przyszło dokładnie 15 min przed lub wcześniej, nie później)
+    const fourteenMinutesLater = new Date(now.getTime() + 14 * 60 * 1000);
     const fifteenMinutesLater = new Date(now.getTime() + 15 * 60 * 1000);
-    const sixteenMinutesLater = new Date(now.getTime() + 16 * 60 * 1000);
 
     const programs15min = await this.prisma.program.findMany({
       where: {
         startsAt: {
-          gte: fifteenMinutesLater,
-          lte: sixteenMinutesLater,
+          gte: fourteenMinutesLater,
+          lte: fifteenMinutesLater,
         },
       },
       include: {
@@ -117,7 +117,7 @@ export class NotificationService {
     });
 
     this.logger.info(
-      { count: programs15min.length, timeWindow: '15-16 min', now: now.toISOString() },
+      { count: programs15min.length, timeWindow: '14-15 min', now: now.toISOString() },
       'Checking programs for 15min reminder',
     );
 
@@ -210,15 +210,15 @@ export class NotificationService {
     }
 
     // 2. Przypomnienie 5 minut przed startem
-    // Sprawdź programy startujące za 5-6 minut (żeby powiadomienie przyszło dokładnie 5 min przed lub wcześniej)
+    // Sprawdź programy startujące za 4-5 minut (żeby powiadomienie przyszło dokładnie 5 min przed lub wcześniej, nie później)
+    const fourMinutesLater = new Date(now.getTime() + 4 * 60 * 1000);
     const fiveMinutesLater = new Date(now.getTime() + 5 * 60 * 1000);
-    const sixMinutesLater = new Date(now.getTime() + 6 * 60 * 1000);
 
     const programs5min = await this.prisma.program.findMany({
       where: {
         startsAt: {
-          gte: fiveMinutesLater,
-          lte: sixMinutesLater,
+          gte: fourMinutesLater,
+          lte: fiveMinutesLater,
         },
       },
       include: {
@@ -232,7 +232,7 @@ export class NotificationService {
     });
 
     this.logger.info(
-      { count: programs5min.length, timeWindow: '5-6 min', now: now.toISOString() },
+      { count: programs5min.length, timeWindow: '4-5 min', now: now.toISOString() },
       'Checking programs for 5min reminder',
     );
 
@@ -259,12 +259,12 @@ export class NotificationService {
         'Checking program for 5min reminder',
       );
       
-      if (minutesUntilStart >= 5 && minutesUntilStart <= 6) {
+      if (minutesUntilStart >= 4 && minutesUntilStart <= 5) {
         // OK - program jest w oknie, wyślij powiadomienie
       } else {
         this.logger.info(
           { programId: program.id, title: program.title, minutesUntilStart },
-          'Program outside 5min window (5-6), skipping',
+          'Program outside 5min window (4-5), skipping',
         );
         continue;
       }
