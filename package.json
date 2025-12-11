@@ -16,7 +16,8 @@
     "epg:import:pl": "tsx src/scripts/import-selected-channels.ts",
     "db:check:programs": "tsx src/scripts/check-programs.ts",
     "test:epg-source": "tsx src/scripts/test-epg-source.ts",
-    "check:epg-channels": "tsx src/scripts/check-epg-channels.ts"
+    "check:epg-channels": "tsx src/scripts/check-epg-channels.ts",
+    "logos:restore": "tsx src/scripts/restore-logos.ts"
   },
   "keywords": [],
   "author": "",
