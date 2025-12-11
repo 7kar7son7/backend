@@ -95,14 +95,14 @@ export class NotificationService {
     const now = new Date();
     
     // 1. Przypomnienie 15 minut przed startem
-    // Sprawdź programy startujące za 14-16 minut (szersze okno dla większej niezawodności)
-    const fourteenMinutesLater = new Date(now.getTime() + 14 * 60 * 1000);
+    // Sprawdź programy startujące za 15-16 minut (żeby powiadomienie przyszło dokładnie 15 min przed lub wcześniej)
+    const fifteenMinutesLater = new Date(now.getTime() + 15 * 60 * 1000);
     const sixteenMinutesLater = new Date(now.getTime() + 16 * 60 * 1000);
 
     const programs15min = await this.prisma.program.findMany({
       where: {
         startsAt: {
-          gte: fourteenMinutesLater,
+          gte: fifteenMinutesLater,
           lte: sixteenMinutesLater,
         },
       },
@@ -117,7 +117,7 @@ export class NotificationService {
     });
 
     this.logger.info(
-      { count: programs15min.length, timeWindow: '14-16 min', now: now.toISOString() },
+      { count: programs15min.length, timeWindow: '15-16 min', now: now.toISOString() },
       'Checking programs for 15min reminder',
     );
 
@@ -128,25 +128,29 @@ export class NotificationService {
         continue;
       }
 
-      // Sprawdź ile minut zostało do startu
-      const minutesUntilStart = Math.round((program.startsAt.getTime() - now.getTime()) / (60 * 1000));
+      // Sprawdź ile minut zostało do startu (używamy floor żeby zawsze zaokrąglać w dół)
+      const millisecondsUntilStart = program.startsAt.getTime() - now.getTime();
+      const minutesUntilStart = Math.floor(millisecondsUntilStart / (60 * 1000));
+      const secondsUntilStart = Math.floor((millisecondsUntilStart % (60 * 1000)) / 1000);
+      
       this.logger.info(
         { 
           programId: program.id, 
           title: program.title, 
           startsAt: program.startsAt.toISOString(),
           minutesUntilStart,
+          secondsUntilStart,
           deviceIdsCount: deviceIds.length 
         },
         'Checking program for 15min reminder',
       );
       
-      // Akceptuj programy w oknie 14-16 minut (szersze okno dla większej niezawodności)
-      // Ale preferuj dokładnie 15 minut
-      if (minutesUntilStart < 14 || minutesUntilStart > 16) {
+      // Akceptuj programy w oknie 15-16 minut (job działa co minutę, więc musimy mieć okno)
+      // To zapewni, że powiadomienie przyjdzie dokładnie 15 minut przed lub wcześniej (nie później)
+      if (minutesUntilStart < 15 || minutesUntilStart > 16) {
         this.logger.debug(
           { programId: program.id, title: program.title, minutesUntilStart },
-          'Program outside 15min window (14-16), skipping',
+          'Program outside 15min window (15-16), skipping',
         );
         continue;
       }
@@ -206,14 +210,14 @@ export class NotificationService {
     }
 
     // 2. Przypomnienie 5 minut przed startem
-    // Sprawdź programy startujące za 4-6 minut (szersze okno)
-    const fourMinutesLater = new Date(now.getTime() + 4 * 60 * 1000);
+    // Sprawdź programy startujące za 5-6 minut (żeby powiadomienie przyszło dokładnie 5 min przed lub wcześniej)
+    const fiveMinutesLater = new Date(now.getTime() + 5 * 60 * 1000);
     const sixMinutesLater = new Date(now.getTime() + 6 * 60 * 1000);
 
     const programs5min = await this.prisma.program.findMany({
       where: {
         startsAt: {
-          gte: fourMinutesLater,
+          gte: fiveMinutesLater,
           lte: sixMinutesLater,
         },
       },
@@ -228,7 +232,7 @@ export class NotificationService {
     });
 
     this.logger.info(
-      { count: programs5min.length, timeWindow: '4-6 min' },
+      { count: programs5min.length, timeWindow: '5-6 min', now: now.toISOString() },
       'Checking programs for 5min reminder',
     );
 
@@ -239,11 +243,28 @@ export class NotificationService {
         continue;
       }
 
-      const minutesUntilStart = Math.round((program.startsAt.getTime() - now.getTime()) / (60 * 1000));
-      if (minutesUntilStart < 4 || minutesUntilStart > 6) {
+      const millisecondsUntilStart = program.startsAt.getTime() - now.getTime();
+      const minutesUntilStart = Math.floor(millisecondsUntilStart / (60 * 1000));
+      const secondsUntilStart = Math.floor((millisecondsUntilStart % (60 * 1000)) / 1000);
+      
+      this.logger.info(
+        { 
+          programId: program.id, 
+          title: program.title, 
+          startsAt: program.startsAt.toISOString(),
+          minutesUntilStart,
+          secondsUntilStart,
+          deviceIdsCount: deviceIds.length 
+        },
+        'Checking program for 5min reminder',
+      );
+      
+      if (minutesUntilStart >= 5 && minutesUntilStart <= 6) {
+        // OK - program jest w oknie, wyślij powiadomienie
+      } else {
         this.logger.info(
           { programId: program.id, title: program.title, minutesUntilStart },
-          'Program outside 5min window, skipping',
+          'Program outside 5min window (5-6), skipping',
         );
         continue;
       }
