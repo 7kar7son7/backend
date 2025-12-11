@@ -172,5 +172,68 @@ export class EventService {
 
     return followers.map((follow) => follow.deviceId);
   }
+
+  async getEvent(eventId: string) {
+    return this.prisma.event.findUnique({
+      where: { id: eventId },
+      include: {
+        program: {
+          include: {
+            channel: true,
+          },
+        },
+      },
+    });
+  }
+
+  async getEventConfirmationsCount(eventId: string) {
+    return this.prisma.eventConfirmation.count({
+      where: { eventId },
+    });
+  }
+
+  async getProgramFollowersForNotification(eventId: string, programId: string) {
+    // Pobierz wszystkich followers programu, którzy jeszcze nie potwierdzili tego eventu
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      include: {
+        confirmations: {
+          select: { deviceId: true },
+        },
+      },
+    });
+
+    if (!event) {
+      return [];
+    }
+
+    const confirmedDeviceIds = new Set(event.confirmations.map((c) => c.deviceId));
+
+    const followers = await this.prisma.followedItem.findMany({
+      where: {
+        programId,
+        type: FollowType.PROGRAM,
+      },
+      select: { deviceId: true },
+    });
+
+    // Pobierz deviceToken dla każdego deviceId, który jeszcze nie potwierdził
+    const deviceIds = followers
+      .map((f) => f.deviceId)
+      .filter((deviceId) => !confirmedDeviceIds.has(deviceId));
+
+    if (deviceIds.length === 0) {
+      return [];
+    }
+
+    const deviceTokens = await this.prisma.deviceToken.findMany({
+      where: {
+        deviceId: { in: deviceIds },
+      },
+      select: { deviceId: true },
+    });
+
+    return deviceTokens.map((dt) => dt.deviceId);
+  }
 }
 

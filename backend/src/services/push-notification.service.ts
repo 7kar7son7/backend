@@ -10,6 +10,7 @@ export type PushMessage = {
   title: string;
   body: string;
   data?: Record<string, string>;
+  image?: string;
 };
 
 const FCM_ENDPOINT = 'https://fcm.googleapis.com/fcm/send';
