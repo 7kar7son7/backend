@@ -24,6 +24,49 @@ const dayQuerySchema = z.object({
 });
 
 export default async function programsRoutes(app: FastifyInstance) {
+  app.get('/:programId', async (request, reply) => {
+    try {
+      const { programId } = request.params as { programId: string };
+
+      const program = await app.prisma.program.findUnique({
+        where: { id: programId },
+        include: {
+          channel: true,
+        },
+      });
+
+      if (!program) {
+        return reply.code(404).send({
+          error: 'Program not found',
+          message: `Program with id ${programId} not found`,
+        });
+      }
+
+      return {
+        data: {
+          id: program.id,
+          title: program.title,
+          channelId: program.channelId,
+          channelName: program.channel?.name ?? program.channelId ?? 'Nieznany kanał',
+          channelLogoUrl: program.channel?.logoUrl ?? null,
+          description: program.description,
+          seasonNumber: program.seasonNumber,
+          episodeNumber: program.episodeNumber,
+          startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
+          endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
+          imageUrl: program.imageUrl ?? program.channel?.logoUrl ?? null,
+          tags: program.tags ?? [],
+        },
+      };
+    } catch (error) {
+      request.log.error(error, 'Failed to fetch program');
+      return reply.code(500).send({
+        error: 'Failed to fetch program',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
   app.get('/day', async (request, reply) => {
     try {
       const query = dayQuerySchema.parse(request.query);
@@ -128,13 +171,13 @@ export default async function programsRoutes(app: FastifyInstance) {
             id: program.id,
             title: program.title,
             channelId: program.channelId,
-            channelName: program.channel?.name ?? program.channelId,
+            channelName: program.channel?.name ?? program.channelId ?? 'Nieznany kanał',
             channelLogoUrl: program.channel?.logoUrl ?? null,
             description: program.description,
             seasonNumber: program.seasonNumber,
             episodeNumber: program.episodeNumber,
-            startsAt: program.startsAt,
-            endsAt: program.endsAt,
+            startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
+            endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
             imageUrl: program.imageUrl ?? program.channel?.logoUrl ?? null,
             tags: program.tags ?? [],
           })),
