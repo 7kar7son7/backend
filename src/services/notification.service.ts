@@ -95,15 +95,15 @@ export class NotificationService {
     const now = new Date();
     
     // 1. Przypomnienie 15 minut przed startem
-    // Sprawdź programy startujące za 14-15 minut (okno 1 minuty)
+    // Sprawdź programy startujące za 14-16 minut (szersze okno dla większej niezawodności)
     const fourteenMinutesLater = new Date(now.getTime() + 14 * 60 * 1000);
-    const fifteenMinutesLater = new Date(now.getTime() + 15 * 60 * 1000);
+    const sixteenMinutesLater = new Date(now.getTime() + 16 * 60 * 1000);
 
     const programs15min = await this.prisma.program.findMany({
       where: {
         startsAt: {
           gte: fourteenMinutesLater,
-          lte: fifteenMinutesLater,
+          lte: sixteenMinutesLater,
         },
       },
       include: {
@@ -116,9 +116,38 @@ export class NotificationService {
       },
     });
 
+    this.logger.info(
+      { count: programs15min.length, timeWindow: '14-16 min', now: now.toISOString() },
+      'Checking programs for 15min reminder',
+    );
+
     for (const program of programs15min) {
       const deviceIds = program.programFollows.map((follow) => follow.deviceId);
       if (deviceIds.length === 0) {
+        this.logger.info({ programId: program.id, title: program.title }, 'Program has no followers, skipping');
+        continue;
+      }
+
+      // Sprawdź ile minut zostało do startu
+      const minutesUntilStart = Math.round((program.startsAt.getTime() - now.getTime()) / (60 * 1000));
+      this.logger.info(
+        { 
+          programId: program.id, 
+          title: program.title, 
+          startsAt: program.startsAt.toISOString(),
+          minutesUntilStart,
+          deviceIdsCount: deviceIds.length 
+        },
+        'Checking program for 15min reminder',
+      );
+      
+      // Akceptuj programy w oknie 14-16 minut (szersze okno dla większej niezawodności)
+      // Ale preferuj dokładnie 15 minut
+      if (minutesUntilStart < 14 || minutesUntilStart > 16) {
+        this.logger.debug(
+          { programId: program.id, title: program.title, minutesUntilStart },
+          'Program outside 15min window (14-16), skipping',
+        );
         continue;
       }
 
@@ -134,6 +163,10 @@ export class NotificationService {
         });
         
         // Rekord utworzony - teraz wyślij powiadomienie
+        this.logger.info(
+          { programId: program.id, title: program.title, deviceIdsCount: deviceIds.length, minutesUntilStart },
+          'Sending 15min reminder notification',
+        );
         await this.pushNotification.send(deviceIds, {
           title: 'Start za 15 minut',
           body: `${program.title} | ${program.channel?.name ?? ''}`,
@@ -145,6 +178,10 @@ export class NotificationService {
             reminderType: '15_MIN',
           },
         });
+        this.logger.info(
+          { programId: program.id, title: program.title },
+          '15min reminder notification sent successfully',
+        );
       } catch (error: any) {
         // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje - nie wysyłaj
         if (error?.code === 'P2002') {
@@ -169,15 +206,15 @@ export class NotificationService {
     }
 
     // 2. Przypomnienie 5 minut przed startem
-    // Sprawdź programy startujące za 4-5 minut (okno 1 minuty)
+    // Sprawdź programy startujące za 4-6 minut (szersze okno)
     const fourMinutesLater = new Date(now.getTime() + 4 * 60 * 1000);
-    const fiveMinutesLater = new Date(now.getTime() + 5 * 60 * 1000);
+    const sixMinutesLater = new Date(now.getTime() + 6 * 60 * 1000);
 
     const programs5min = await this.prisma.program.findMany({
       where: {
         startsAt: {
           gte: fourMinutesLater,
-          lte: fiveMinutesLater,
+          lte: sixMinutesLater,
         },
       },
       include: {
@@ -190,9 +227,24 @@ export class NotificationService {
       },
     });
 
+    this.logger.info(
+      { count: programs5min.length, timeWindow: '4-6 min' },
+      'Checking programs for 5min reminder',
+    );
+
     for (const program of programs5min) {
       const deviceIds = program.programFollows.map((follow) => follow.deviceId);
       if (deviceIds.length === 0) {
+        this.logger.info({ programId: program.id, title: program.title }, 'Program has no followers, skipping');
+        continue;
+      }
+
+      const minutesUntilStart = Math.round((program.startsAt.getTime() - now.getTime()) / (60 * 1000));
+      if (minutesUntilStart < 4 || minutesUntilStart > 6) {
+        this.logger.info(
+          { programId: program.id, title: program.title, minutesUntilStart },
+          'Program outside 5min window, skipping',
+        );
         continue;
       }
 
@@ -208,6 +260,10 @@ export class NotificationService {
         });
         
         // Rekord utworzony - teraz wyślij powiadomienie
+        this.logger.info(
+          { programId: program.id, title: program.title, deviceIdsCount: deviceIds.length },
+          'Sending 5min reminder notification',
+        );
         await this.pushNotification.send(deviceIds, {
           title: 'Start za 5 minut',
           body: `${program.title} | ${program.channel?.name ?? ''}`,
@@ -219,6 +275,10 @@ export class NotificationService {
             reminderType: '5_MIN',
           },
         });
+        this.logger.info(
+          { programId: program.id, title: program.title },
+          '5min reminder notification sent',
+        );
       } catch (error: any) {
         // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje - nie wysyłaj
         if (error?.code === 'P2002') {
@@ -262,9 +322,15 @@ export class NotificationService {
       },
     });
 
+    this.logger.info(
+      { count: programsStarted.length, timeWindow: '0-30s ago' },
+      'Checking programs for started notification',
+    );
+
     for (const program of programsStarted) {
       const deviceIds = program.programFollows.map((follow) => follow.deviceId);
       if (deviceIds.length === 0) {
+        this.logger.info({ programId: program.id, title: program.title }, 'Program has no followers, skipping');
         continue;
       }
 
@@ -280,6 +346,10 @@ export class NotificationService {
         });
         
         // Rekord utworzony - teraz wyślij powiadomienie
+        this.logger.info(
+          { programId: program.id, title: program.title, deviceIdsCount: deviceIds.length },
+          'Sending program started notification',
+        );
         await this.pushNotification.send(deviceIds, {
           title: 'Program właśnie się zaczął',
           body: `${program.title} | ${program.channel?.name ?? ''}`,
@@ -290,6 +360,10 @@ export class NotificationService {
             startsAt: program.startsAt.toISOString(),
           },
         });
+        this.logger.info(
+          { programId: program.id, title: program.title },
+          'Program started notification sent',
+        );
       } catch (error: any) {
         // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje - nie wysyłaj
         if (error?.code === 'P2002') {

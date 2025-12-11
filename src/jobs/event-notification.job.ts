@@ -10,6 +10,7 @@ export function startProgramStartReminderJob(app: FastifyInstance): ScheduledTas
 
   const task = cron.schedule(START_SOON_SCHEDULE, async () => {
     try {
+      app.log.debug('Running program start reminder job');
       await notificationService.sendProgramStartingSoonReminder();
     } catch (error) {
       app.log.error(error, 'Failed to send program start reminder');
