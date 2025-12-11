@@ -129,7 +129,20 @@ export default async function channelsRoutes(app: FastifyInstance) {
     return {
       data: {
         channel,
-        programs,
+        programs: programs.map((program) => ({
+          id: program.id,
+          title: program.title,
+          channelId: program.channelId,
+          channelName: channel.name,
+          channelLogoUrl: channel.logoUrl ?? null,
+          description: program.description ?? null,
+          seasonNumber: program.seasonNumber ?? null,
+          episodeNumber: program.episodeNumber ?? null,
+          startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
+          endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
+          imageUrl: program.imageUrl ?? channel.logoUrl ?? null,
+          tags: program.tags ?? [],
+        })),
       },
     };
   });
