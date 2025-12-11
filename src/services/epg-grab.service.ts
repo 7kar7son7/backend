@@ -1,44 +1,23 @@
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
-import { access } from 'node:fs/promises';
-import { constants } from 'node:fs';
 import type { FastifyBaseLogger } from 'fastify';
 
 import { env } from '../config/env';
 
 /**
- * Sprawdza dostępność shella w systemie
- */
-async function findAvailableShell(): Promise<string> {
-  const shells = ['/bin/sh', '/bin/bash', '/bin/ash', '/bin/zsh'];
-  
-  for (const shell of shells) {
-    try {
-      await access(shell, constants.F_OK);
-      return shell;
-    } catch {
-      // Shell nie istnieje, spróbuj następny
-      continue;
-    }
-  }
-  
-  // Jeśli żaden shell nie został znaleziony, zwróć domyślny
-  // Node.js spróbuje użyć systemowego domyślnego
-  return '/bin/sh';
-}
-
-/**
- * Wykonuje komendę używając spawn zamiast exec
+ * Wykonuje komendę używając spawn z shell: true
+ * Node.js automatycznie znajdzie dostępny shell w systemie
  */
 function spawnAsync(
   command: string,
-  options: { cwd: string; shell: string }
+  options: { cwd: string }
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    // Użyj spawn z shell: true i pełną komendą jako string
+    // Użyj spawn z shell: true - Node.js automatycznie znajdzie dostępny shell
+    // W Alpine będzie to /bin/ash, w innych systemach /bin/sh lub /bin/bash
     const child = spawn(command, {
       cwd: options.cwd,
-      shell: options.shell,
+      shell: true, // Node.js automatycznie wybierze dostępny shell
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -83,13 +62,8 @@ export async function runConfiguredGrab(logger: FastifyBaseLogger) {
   logger.info({ command, cwd: workingDir }, '🔄 Aktualizuję feed EPG (grab).');
 
   try {
-    // Znajdź dostępny shell w systemie
-    const shell = await findAvailableShell();
-    logger.info({ shell }, '🔍 Używam shella');
-
     const { stdout, stderr } = await spawnAsync(command, {
       cwd: workingDir,
-      shell,
     });
 
     if (stdout.trim().length > 0) {
