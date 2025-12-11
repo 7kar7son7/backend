@@ -80,41 +80,39 @@ export function startReminderJob(app: FastifyInstance): ScheduledTask {
             continue;
           }
 
-          // Wyłączone - na razie skupiamy się tylko na "koniec reklam" (EVENT_STARTED)
-          // Przypomnienia o aktywnych wydarzeniach są wyłączone
-          // if (currentHour >= NIGHT_START || currentHour < NIGHT_END) {
-          //   await eventService.registerReminder(
-          //     event.id,
-          //     follower.deviceId,
-          //     remindersForEvent.length + 1,
-          //     true,
-          //   );
-          //   continue;
-          // }
+          if (currentHour >= NIGHT_START || currentHour < NIGHT_END) {
+            await eventService.registerReminder(
+              event.id,
+              follower.deviceId,
+              remindersForEvent.length + 1,
+              true,
+            );
+            continue;
+          }
 
-          // try {
-          //   await notificationService.sendReminderNotification(
-          //     [follower.deviceId],
-          //     {
-          //       eventId: event.id,
-          //       programId: event.programId,
-          //       channelId: event.program.channelId,
-          //       programTitle: event.program.title,
-          //       startsAt: event.program.startsAt.toISOString(),
-          //       channelName: event.program.channel?.name || null,
-          //     },
-          //     remindersForEvent.length + 1,
-          //   );
+          try {
+            await notificationService.sendReminderNotification(
+              [follower.deviceId],
+              {
+                eventId: event.id,
+                programId: event.programId,
+                channelId: event.program.channelId,
+                programTitle: event.program.title,
+                startsAt: event.program.startsAt.toISOString(),
+                channelName: event.program.channel?.name || null,
+              },
+              remindersForEvent.length + 1,
+            );
 
-          //   await eventService.registerReminder(
-          //     event.id,
-          //     follower.deviceId,
-          //     remindersForEvent.length + 1,
-          //     false,
-          //   );
-          // } catch (error) {
-          //   app.log.error(error, 'Failed to send reminder notification');
-          // }
+            await eventService.registerReminder(
+              event.id,
+              follower.deviceId,
+              remindersForEvent.length + 1,
+              false,
+            );
+          } catch (error) {
+            app.log.error(error, 'Failed to send reminder notification');
+          }
         }
       }
     },

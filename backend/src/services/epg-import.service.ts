@@ -56,15 +56,28 @@ export class EpgImportService {
         `Import kanału ${index + 1}/${totalChannels}: ${channel.name} (${channel.programs?.length ?? 0} programów)`,
       );
 
+      // Przygotuj dane do update - nie nadpisuj logoUrl jeśli nie ma nowego logotypu
+      const updateData: {
+        name: string;
+        category: string | null;
+        description: string | null;
+        logoUrl?: string | null;
+        countryCode: string | null;
+      } = {
+        name: channel.name,
+        category: channel.category ?? null,
+        description: channel.description ?? null,
+        countryCode: channel.countryCode ?? null,
+      };
+
+      // Aktualizuj logoUrl tylko jeśli jest nowy logotyp
+      if (channel.logo !== undefined && channel.logo !== null) {
+        updateData.logoUrl = channel.logo;
+      }
+
       const channelRecord = await this.prisma.channel.upsert({
         where: { externalId: channel.id },
-        update: {
-          name: channel.name,
-          category: channel.category ?? null,
-          description: channel.description ?? null,
-          logoUrl: channel.logo ?? null,
-          countryCode: channel.countryCode ?? null,
-        },
+        update: updateData,
         create: {
           externalId: channel.id,
           name: channel.name,
