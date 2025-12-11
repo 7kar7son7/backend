@@ -2,6 +2,7 @@ import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 import type { FastifyBaseLogger } from 'fastify';
+import type { ExecOptions } from 'node:child_process';
 
 import { env } from '../config/env';
 
@@ -19,17 +20,21 @@ export async function runConfiguredGrab(logger: FastifyBaseLogger) {
   logger.info({ command, cwd: workingDir }, '🔄 Aktualizuję feed EPG (grab).');
 
   try {
-    const { stdout, stderr } = await execAsync(command, {
+    const options: ExecOptions = {
       cwd: workingDir,
       maxBuffer: 1024 * 1024 * 20,
-      shell: true, // Użyj domyślnego shella systemu zamiast wymuszać /bin/sh
-    });
+      shell: process.env.SHELL || '/bin/sh', // Użyj domyślnego shella systemu zamiast wymuszać /bin/sh
+    };
+    const { stdout, stderr } = await execAsync(command, options);
 
-    if (stdout.trim().length > 0) {
-      logger.info({ stdout }, '📄 Wynik komendy grab (stdout)');
+    const stdoutStr = typeof stdout === 'string' ? stdout : stdout.toString();
+    const stderrStr = typeof stderr === 'string' ? stderr : stderr.toString();
+
+    if (stdoutStr.trim().length > 0) {
+      logger.info({ stdout: stdoutStr }, '📄 Wynik komendy grab (stdout)');
     }
-    if (stderr.trim().length > 0) {
-      logger.warn({ stderr }, '⚠️ Wynik komendy grab (stderr)');
+    if (stderrStr.trim().length > 0) {
+      logger.warn({ stderr: stderrStr }, '⚠️ Wynik komendy grab (stderr)');
     }
 
     logger.info('✅ Feed EPG został odświeżony.');
