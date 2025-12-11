@@ -95,15 +95,15 @@ export class NotificationService {
     const now = new Date();
     
     // 1. Przypomnienie 15 minut przed startem
-    // Sprawdź programy startujące za 14-15 minut (żeby powiadomienie przyszło dokładnie 15 min przed lub wcześniej, nie później)
-    const fourteenMinutesLater = new Date(now.getTime() + 14 * 60 * 1000);
+    // Sprawdź programy startujące za 15-16 minut (żeby powiadomienie przyszło dokładnie 15 min przed lub wcześniej)
     const fifteenMinutesLater = new Date(now.getTime() + 15 * 60 * 1000);
+    const sixteenMinutesLater = new Date(now.getTime() + 16 * 60 * 1000);
 
     const programs15min = await this.prisma.program.findMany({
       where: {
         startsAt: {
-          gte: fourteenMinutesLater,
-          lte: fifteenMinutesLater,
+          gte: fifteenMinutesLater,
+          lte: sixteenMinutesLater,
         },
       },
       include: {
@@ -117,7 +117,7 @@ export class NotificationService {
     });
 
     this.logger.info(
-      { count: programs15min.length, timeWindow: '14-15 min', now: now.toISOString() },
+      { count: programs15min.length, timeWindow: '15-16 min', now: now.toISOString() },
       'Checking programs for 15min reminder',
     );
 
@@ -128,10 +128,11 @@ export class NotificationService {
         continue;
       }
 
-      // Sprawdź ile minut zostało do startu (używamy floor żeby zawsze zaokrąglać w dół)
+      // Sprawdź ile minut i sekund zostało do startu
       const millisecondsUntilStart = program.startsAt.getTime() - now.getTime();
-      const minutesUntilStart = Math.floor(millisecondsUntilStart / (60 * 1000));
-      const secondsUntilStart = Math.floor((millisecondsUntilStart % (60 * 1000)) / 1000);
+      const totalSecondsUntilStart = Math.floor(millisecondsUntilStart / 1000);
+      const minutesUntilStart = Math.floor(totalSecondsUntilStart / 60);
+      const secondsUntilStart = totalSecondsUntilStart % 60;
       
       this.logger.info(
         { 
@@ -140,20 +141,25 @@ export class NotificationService {
           startsAt: program.startsAt.toISOString(),
           minutesUntilStart,
           secondsUntilStart,
+          totalSecondsUntilStart,
           deviceIdsCount: deviceIds.length 
         },
         'Checking program for 15min reminder',
       );
       
-      // Akceptuj programy w oknie 15-16 minut (job działa co minutę, więc musimy mieć okno)
-      // To zapewni, że powiadomienie przyjdzie dokładnie 15 minut przed lub wcześniej (nie później)
-      if (minutesUntilStart < 15 || minutesUntilStart > 16) {
+      // Wysyłaj powiadomienie TYLKO gdy jest dokładnie 15 minut przed (900 sekund = 15 * 60)
+      // Akceptuj okno 14:30 - 15:30 (870-930 sekund) żeby job co minutę nie przegapił
+      // Ale preferuj dokładnie 15 minut (900 sekund)
+      if (totalSecondsUntilStart < 870 || totalSecondsUntilStart > 930) {
         this.logger.debug(
-          { programId: program.id, title: program.title, minutesUntilStart },
-          'Program outside 15min window (15-16), skipping',
+          { programId: program.id, title: program.title, minutesUntilStart, secondsUntilStart, totalSecondsUntilStart },
+          'Program outside 15min window (14:30-15:30), skipping',
         );
         continue;
       }
+      
+      // Jeśli jest dokładnie 15 minut (900 sekund) lub najbliżej (w oknie 14:30-15:30), wyślij
+      // Preferuj dokładnie 15 minut, ale akceptuj też 14:30-15:30 żeby nie przegapić
 
       // Próbuj utworzyć rekord PRZED wysłaniem - jeśli już istnieje (P2002), nie wysyłaj
       try {
@@ -210,15 +216,15 @@ export class NotificationService {
     }
 
     // 2. Przypomnienie 5 minut przed startem
-    // Sprawdź programy startujące za 4-5 minut (żeby powiadomienie przyszło dokładnie 5 min przed lub wcześniej, nie później)
-    const fourMinutesLater = new Date(now.getTime() + 4 * 60 * 1000);
+    // Sprawdź programy startujące za 5-6 minut (żeby powiadomienie przyszło dokładnie 5 min przed lub wcześniej)
     const fiveMinutesLater = new Date(now.getTime() + 5 * 60 * 1000);
+    const sixMinutesLater = new Date(now.getTime() + 6 * 60 * 1000);
 
     const programs5min = await this.prisma.program.findMany({
       where: {
         startsAt: {
-          gte: fourMinutesLater,
-          lte: fiveMinutesLater,
+          gte: fiveMinutesLater,
+          lte: sixMinutesLater,
         },
       },
       include: {
@@ -232,7 +238,7 @@ export class NotificationService {
     });
 
     this.logger.info(
-      { count: programs5min.length, timeWindow: '4-5 min', now: now.toISOString() },
+      { count: programs5min.length, timeWindow: '5-6 min', now: now.toISOString() },
       'Checking programs for 5min reminder',
     );
 
@@ -244,8 +250,9 @@ export class NotificationService {
       }
 
       const millisecondsUntilStart = program.startsAt.getTime() - now.getTime();
-      const minutesUntilStart = Math.floor(millisecondsUntilStart / (60 * 1000));
-      const secondsUntilStart = Math.floor((millisecondsUntilStart % (60 * 1000)) / 1000);
+      const totalSecondsUntilStart = Math.floor(millisecondsUntilStart / 1000);
+      const minutesUntilStart = Math.floor(totalSecondsUntilStart / 60);
+      const secondsUntilStart = totalSecondsUntilStart % 60;
       
       this.logger.info(
         { 
@@ -254,20 +261,24 @@ export class NotificationService {
           startsAt: program.startsAt.toISOString(),
           minutesUntilStart,
           secondsUntilStart,
+          totalSecondsUntilStart,
           deviceIdsCount: deviceIds.length 
         },
         'Checking program for 5min reminder',
       );
       
-      if (minutesUntilStart >= 4 && minutesUntilStart <= 5) {
-        // OK - program jest w oknie, wyślij powiadomienie
-      } else {
+      // Wysyłaj powiadomienie TYLKO gdy jest dokładnie 5 minut przed (300 sekund = 5 * 60)
+      // Akceptuj okno 4:30 - 5:30 (270-330 sekund) żeby job co minutę nie przegapił
+      // Ale preferuj dokładnie 5 minut (300 sekund)
+      if (totalSecondsUntilStart < 270 || totalSecondsUntilStart > 330) {
         this.logger.info(
-          { programId: program.id, title: program.title, minutesUntilStart },
-          'Program outside 5min window (4-5), skipping',
+          { programId: program.id, title: program.title, minutesUntilStart, secondsUntilStart, totalSecondsUntilStart },
+          'Program outside 5min window (4:30-5:30), skipping',
         );
         continue;
       }
+      
+      // Jeśli jest dokładnie 5 minut (300 sekund) lub najbliżej (w oknie 4:30-5:30), wyślij
 
       // Próbuj utworzyć rekord PRZED wysłaniem - jeśli już istnieje (P2002), nie wysyłaj
       try {
@@ -323,13 +334,13 @@ export class NotificationService {
     }
 
     // 3. Powiadomienie gdy program się zacznie
-    // Sprawdź programy które właśnie się zaczęły (0-30 sekund od startu) - wąskie okno aby uniknąć duplikatów
-    const thirtySecondsAgo = new Date(now.getTime() - 30 * 1000);
+    // Sprawdź programy które właśnie się zaczęły (0-60 sekund od startu) - okno aby job co minutę nie przegapił
+    const sixtySecondsAgo = new Date(now.getTime() - 60 * 1000);
 
     const programsStarted = await this.prisma.program.findMany({
       where: {
         startsAt: {
-          gte: thirtySecondsAgo,
+          gte: sixtySecondsAgo,
           lte: now,
         },
       },
@@ -344,7 +355,7 @@ export class NotificationService {
     });
 
     this.logger.info(
-      { count: programsStarted.length, timeWindow: '0-30s ago' },
+      { count: programsStarted.length, timeWindow: '0-60s ago', now: now.toISOString() },
       'Checking programs for started notification',
     );
 
