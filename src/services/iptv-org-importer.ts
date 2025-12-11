@@ -2,10 +2,11 @@ import { PrismaClient } from '@prisma/client';
 import { FastifyBaseLogger } from 'fastify';
 import { XMLParser } from 'fast-xml-parser';
 import { DateTime } from 'luxon';
-import { readFile } from 'node:fs/promises';
+import { readFile, access } from 'node:fs/promises';
 import { fetch } from 'undici';
 import { isAbsolute, resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
+import { constants } from 'node:fs';
 
 import { env } from '../config/env';
 import { EpgImportService, type EpgChannel, type EpgFeed, type EpgProgram } from './epg-import.service';
@@ -918,6 +919,15 @@ async function loadAllowedChannelSlugs(logger: FastifyBaseLogger) {
     }
 
     try {
+      // Sprawdź czy plik istnieje przed próbą otwarcia
+      try {
+        await access(resolvedPath, constants.F_OK);
+      } catch {
+        // Plik nie istnieje - to jest OK, zwróć pusty Set
+        logger.debug({ path: resolvedPath }, 'Plik channels.json nie istnieje, używam pustej listy kanałów');
+        return new Set<string>();
+      }
+
       const raw = await readFile(resolvedPath, 'utf-8');
       const entries = JSON.parse(raw) as ChannelEntry[];
       const slugs = new Set<string>();
@@ -941,6 +951,11 @@ async function loadAllowedChannelSlugs(logger: FastifyBaseLogger) {
       allowedChannelSlugsCache = slugs;
       return slugs;
     } catch (error) {
+      // Jeśli błąd to ENOENT (plik nie istnieje), to jest OK - zwróć pusty Set
+      if ((error as any)?.code === 'ENOENT') {
+        logger.debug({ path: resolvedPath }, 'Plik channels.json nie istnieje, używam pustej listy kanałów');
+        return new Set<string>();
+      }
       logger.warn(
         { err: error, path: resolvedPath },
         'Nie udało się wczytać pliku kanałów (channels.json).',
