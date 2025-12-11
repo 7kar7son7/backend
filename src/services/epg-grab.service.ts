@@ -20,15 +20,18 @@ export async function runConfiguredGrab(logger: FastifyBaseLogger) {
   logger.info({ command, cwd: workingDir }, '🔄 Aktualizuję feed EPG (grab).');
 
   try {
-    const options: ExecOptions = {
+    // Użyj shell: true żeby Node.js automatycznie wybrał dostępny shell
+    // W Alpine może być /bin/ash, w innych systemach /bin/sh lub /bin/bash
+    // TypeScript wymusza string, ale true działa lepiej - używamy as any
+    const options: any = {
       cwd: workingDir,
       maxBuffer: 1024 * 1024 * 20,
-      shell: process.env.SHELL || '/bin/sh', // Użyj domyślnego shella systemu zamiast wymuszać /bin/sh
+      shell: true, // Node.js automatycznie wybierze dostępny shell
     };
     const { stdout, stderr } = await execAsync(command, options);
 
-    const stdoutStr = typeof stdout === 'string' ? stdout : stdout.toString();
-    const stderrStr = typeof stderr === 'string' ? stderr : stderr.toString();
+    const stdoutStr = typeof stdout === 'string' ? stdout : String(stdout);
+    const stderrStr = typeof stderr === 'string' ? stderr : String(stderr);
 
     if (stdoutStr.trim().length > 0) {
       logger.info({ stdout: stdoutStr }, '📄 Wynik komendy grab (stdout)');
