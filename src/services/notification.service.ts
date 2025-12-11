@@ -95,14 +95,14 @@ export class NotificationService {
     const now = new Date();
     
     // 1. Przypomnienie 15 minut przed startem
-    // Sprawdź programy startujące za 15-16 minut (żeby powiadomienie przyszło dokładnie 15 min przed lub wcześniej)
-    const fifteenMinutesLater = new Date(now.getTime() + 15 * 60 * 1000);
+    // Sprawdź programy startujące za 14-16 minut (szersze okno żeby nie przegapić)
+    const fourteenMinutesLater = new Date(now.getTime() + 14 * 60 * 1000);
     const sixteenMinutesLater = new Date(now.getTime() + 16 * 60 * 1000);
 
     const programs15min = await this.prisma.program.findMany({
       where: {
         startsAt: {
-          gte: fifteenMinutesLater,
+          gte: fourteenMinutesLater,
           lte: sixteenMinutesLater,
         },
       },
@@ -117,7 +117,7 @@ export class NotificationService {
     });
 
     this.logger.info(
-      { count: programs15min.length, timeWindow: '15-16 min', now: now.toISOString() },
+      { count: programs15min.length, timeWindow: '14-16 min', now: now.toISOString() },
       'Checking programs for 15min reminder',
     );
 
@@ -147,13 +147,12 @@ export class NotificationService {
         'Checking program for 15min reminder',
       );
       
-      // Wysyłaj powiadomienie TYLKO gdy jest dokładnie 15 minut przed (900 sekund = 15 * 60)
-      // Akceptuj okno 14:30 - 15:30 (870-930 sekund) żeby job co minutę nie przegapił
-      // Ale preferuj dokładnie 15 minut (900 sekund)
-      if (totalSecondsUntilStart < 870 || totalSecondsUntilStart > 930) {
-        this.logger.debug(
+      // Wysyłaj powiadomienie gdy jest między 14 a 16 minutami przed (840-960 sekund)
+      // To pozwoli złapać programy które są dokładnie 15 minut przed, nawet jeśli job uruchomi się o 14:59 lub 15:59
+      if (totalSecondsUntilStart < 840 || totalSecondsUntilStart > 960) {
+        this.logger.info(
           { programId: program.id, title: program.title, minutesUntilStart, secondsUntilStart, totalSecondsUntilStart },
-          'Program outside 15min window (14:30-15:30), skipping',
+          'Program outside 15min window (14:00-16:00), skipping',
         );
         continue;
       }
@@ -216,14 +215,14 @@ export class NotificationService {
     }
 
     // 2. Przypomnienie 5 minut przed startem
-    // Sprawdź programy startujące za 5-6 minut (żeby powiadomienie przyszło dokładnie 5 min przed lub wcześniej)
-    const fiveMinutesLater = new Date(now.getTime() + 5 * 60 * 1000);
+    // Sprawdź programy startujące za 4-6 minut (szersze okno żeby nie przegapić)
+    const fourMinutesLater = new Date(now.getTime() + 4 * 60 * 1000);
     const sixMinutesLater = new Date(now.getTime() + 6 * 60 * 1000);
 
     const programs5min = await this.prisma.program.findMany({
       where: {
         startsAt: {
-          gte: fiveMinutesLater,
+          gte: fourMinutesLater,
           lte: sixMinutesLater,
         },
       },
@@ -238,7 +237,7 @@ export class NotificationService {
     });
 
     this.logger.info(
-      { count: programs5min.length, timeWindow: '5-6 min', now: now.toISOString() },
+      { count: programs5min.length, timeWindow: '4-6 min', now: now.toISOString() },
       'Checking programs for 5min reminder',
     );
 
@@ -267,13 +266,12 @@ export class NotificationService {
         'Checking program for 5min reminder',
       );
       
-      // Wysyłaj powiadomienie TYLKO gdy jest dokładnie 5 minut przed (300 sekund = 5 * 60)
-      // Akceptuj okno 4:30 - 5:30 (270-330 sekund) żeby job co minutę nie przegapił
-      // Ale preferuj dokładnie 5 minut (300 sekund)
-      if (totalSecondsUntilStart < 270 || totalSecondsUntilStart > 330) {
+      // Wysyłaj powiadomienie gdy jest między 4 a 6 minutami przed (240-360 sekund)
+      // To pozwoli złapać programy które są dokładnie 5 minut przed, nawet jeśli job uruchomi się o 4:59 lub 5:59
+      if (totalSecondsUntilStart < 240 || totalSecondsUntilStart > 360) {
         this.logger.info(
           { programId: program.id, title: program.title, minutesUntilStart, secondsUntilStart, totalSecondsUntilStart },
-          'Program outside 5min window (4:30-5:30), skipping',
+          'Program outside 5min window (4:00-6:00), skipping',
         );
         continue;
       }
