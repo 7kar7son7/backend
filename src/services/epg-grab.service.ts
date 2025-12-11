@@ -22,6 +22,7 @@ export async function runConfiguredGrab(logger: FastifyBaseLogger) {
     const { stdout, stderr } = await execAsync(command, {
       cwd: workingDir,
       maxBuffer: 1024 * 1024 * 20,
+      shell: true, // Użyj domyślnego shella systemu zamiast wymuszać /bin/sh
     });
 
     if (stdout.trim().length > 0) {
