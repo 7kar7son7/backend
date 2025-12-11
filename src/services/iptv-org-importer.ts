@@ -550,9 +550,20 @@ async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
     if (isGzip) {
       logger.info('📦 Wykryto plik gzip, dekompresuję...');
       const buffer = await response.arrayBuffer();
-      const decompressed = gunzipSync(Buffer.from(buffer));
-      text = decompressed.toString('utf-8');
-      logger.info(`✅ Zdekompresowano gzip (${text.length} znaków)`);
+      try {
+        const decompressed = gunzipSync(Buffer.from(buffer));
+        text = decompressed.toString('utf-8');
+        logger.info(`✅ Zdekompresowano gzip (${text.length} znaków)`);
+      } catch (decompressError) {
+        // Jeśli dekompresja się nie powiodła, spróbuj potraktować jako zwykły XML
+        // Może serwer zwraca zwykły XML mimo rozszerzenia .gz
+        logger.warn({ 
+          error: decompressError instanceof Error ? decompressError.message : String(decompressError),
+          url 
+        }, '⚠️ Nie udało się zdekompresować jako gzip, próbuję jako zwykły XML...');
+        text = Buffer.from(buffer).toString('utf-8');
+        logger.info(`✅ Pobrano jako zwykły XML (${text.length} znaków)`);
+      }
     } else {
       text = await response.text();
       logger.info(`✅ Pobrano treść (${text.length} znaków)`);
