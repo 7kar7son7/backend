@@ -145,7 +145,11 @@ export class EventService {
         },
       },
       include: {
-        program: true,
+        program: {
+          include: {
+            channel: true,
+          },
+        },
         confirmations: true,
       },
       orderBy: { initiatedAt: Prisma.SortOrder.desc },

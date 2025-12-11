@@ -36,6 +36,7 @@ const envSchema = z.object({
   FCM_PRIVATE_KEY: z.string().optional(),
   FCM_SERVER_KEY: z.string().optional(),
   DAILY_REMINDER_SCHEDULE: z.string().optional(),
+  ADMIN_EVENT_SECRET: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);
