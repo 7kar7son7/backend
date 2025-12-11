@@ -35,7 +35,11 @@ export class EventService {
         expiresAt,
       },
       include: {
-        program: true,
+        program: {
+          include: {
+            channel: true,
+          },
+        },
       },
     });
 
