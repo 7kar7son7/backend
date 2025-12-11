@@ -12,18 +12,12 @@ import { env } from '../config/env';
 import { EpgImportService, type EpgChannel, type EpgFeed, type EpgProgram } from './epg-import.service';
 
 // Lista źródeł EPG z priorytetem - pierwsze działające będzie użyte
-// epg.ovh oferuje różne wersje EPG dla Polski
-// Lista źródeł EPG z priorytetem - pierwsze działające będzie użyte
-// Próbujemy różnych źródeł EPG dla Polski - automatyczny fallback
+// Używamy tylko open-epg.com (poland.xml) - sprawdzone źródło
 const EPG_SOURCES = [
+  'https://www.open-epg.com/files/poland2.xml.gz', // Open-EPG - 618 kanałów, 621 KB (skompresowane), aktualizacja codzienna - PRIORYTET
   'https://www.open-epg.com/files/poland1.xml.gz', // Open-EPG - 583 kanały, 1.73 MB (skompresowane), aktualizacja codzienna
-  'https://www.open-epg.com/files/poland2.xml.gz', // Open-EPG - 618 kanałów, 621 KB (skompresowane), aktualizacja codzienna
-  'https://www.open-epg.com/files/poland1.xml', // Open-EPG - fallback bez kompresji (15.06 MB, 583 kanały)
   'https://www.open-epg.com/files/poland2.xml', // Open-EPG - fallback bez kompresji (7.38 MB, 618 kanałów)
-  'https://epg.ovh/plar.xml', // 10-dniowe EPG z 5-dniowym archiwum (NAJLEPSZE - najnowsze dane)
-  'https://epg.ovh/pl.xml', // 5-dniowe EPG (standardowe)
-  'https://epg.ovh/pltv.xml', // EPG z dodatkowymi informacjami
-  'https://raw.githubusercontent.com/iptv-org/epg/master/guides/pl/pl.xml', // GitHub iptv-org (backup)
+  'https://www.open-epg.com/files/poland1.xml', // Open-EPG - fallback bez kompresji (15.06 MB, 583 kanały)
 ] as const;
 
 const DEFAULT_IPTV_URL = EPG_SOURCES[0];
@@ -176,10 +170,24 @@ export async function importIptvOrgEpg(
   }
 
   if (!parsed?.tv) {
+    // Sprawdź czy to HTML z błędem (może parser sparsował HTML jako XML)
+    const parsedStr = JSON.stringify(parsed || {});
+    if (parsedStr.toLowerCase().includes('download limit') || 
+        parsedStr.toLowerCase().includes('you reached the download limit')) {
+      logger.error(
+        {
+          parsedKeys: Object.keys(parsed || {}),
+          parsedPreview: parsedStr.substring(0, 500),
+        },
+        'Serwer zwrócił HTML z błędem (limit pobrań) zamiast XML EPG',
+      );
+      throw new Error('Serwer zwrócił błąd: limit pobrań przekroczony (20 pobrań dziennie)');
+    }
+    
     logger.error(
       {
         parsedKeys: Object.keys(parsed || {}),
-        parsedPreview: JSON.stringify(parsed).substring(0, 500),
+        parsedPreview: parsedStr.substring(0, 500),
       },
       'Invalid EPG feed format - missing tv element',
     );
@@ -571,6 +579,23 @@ async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
     
     if (text.length === 0) {
       throw new Error('Otrzymano pustą odpowiedź z serwera');
+    }
+    
+    // Sprawdź czy serwer zwrócił HTML z błędem (np. limit pobrań)
+    const textLower = text.toLowerCase();
+    if (textLower.includes('download limit') || 
+        textLower.includes('you reached the download limit') ||
+        textLower.includes('try again tomorrow') ||
+        (textLower.includes('<html') && !textLower.includes('<?xml'))) {
+      const errorMsg = text.includes('download limit') 
+        ? 'Serwer zwrócił błąd: limit pobrań przekroczony (20 pobrań dziennie)'
+        : 'Serwer zwrócił HTML zamiast XML';
+      logger.warn({ 
+        url, 
+        textPreview: text.substring(0, 300),
+        errorMsg 
+      }, '⚠️ Serwer zwrócił błąd zamiast pliku EPG');
+      throw new Error(errorMsg);
     }
     
     // Sprawdź czy to wygląda na XML
