@@ -862,6 +862,15 @@ async function loadLogoMap(logger: FastifyBaseLogger) {
     }
 
     try {
+      // Sprawdź czy plik istnieje przed próbą otwarcia
+      try {
+        await access(resolvedPath, constants.F_OK);
+      } catch {
+        // Plik nie istnieje - to jest OK, zwróć pustą mapę
+        logger.debug({ path: resolvedPath }, 'Plik logos.json nie istnieje, używam pustej mapy logotypów');
+        return new Map<string, string>();
+      }
+
       const raw = await readFile(resolvedPath, 'utf-8');
       const entries = JSON.parse(raw) as LogoEntry[];
       const grouped = new Map<string, LogoEntry[]>();
@@ -888,6 +897,11 @@ async function loadLogoMap(logger: FastifyBaseLogger) {
       logoMapCache = map;
       return map;
     } catch (error) {
+      // Jeśli błąd to ENOENT (plik nie istnieje), to jest OK - zwróć pustą mapę
+      if ((error as any)?.code === 'ENOENT') {
+        logger.debug({ path: resolvedPath }, 'Plik logos.json nie istnieje, używam pustej mapy logotypów');
+        return new Map<string, string>();
+      }
       logger.warn(
         { err: error, path: resolvedPath },
         'Nie udało się wczytać pliku z logotypami kanałów.',
