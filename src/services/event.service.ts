@@ -43,7 +43,7 @@ export class EventService {
       },
     });
 
-    const followerDeviceIds = await this.syncEventFollowers(event.id, programId);
+    const followerDeviceIds = await this.syncEventFollowers(event.id, programId, deviceId);
 
     return { event, followerDeviceIds };
   }
@@ -138,11 +138,20 @@ export class EventService {
         expiresAt: {
           gte: new Date(),
         },
-        followers: {
-          some: {
-            deviceId,
+        OR: [
+          // Eventy gdzie użytkownik jest w followers
+          {
+            followers: {
+              some: {
+                deviceId,
+              },
+            },
           },
-        },
+          // LUB eventy gdzie użytkownik jest initiatorem (żeby zawsze widział swoje eventy)
+          {
+            initiatorDeviceId: deviceId,
+          },
+        ],
       },
       include: {
         program: {
@@ -156,7 +165,7 @@ export class EventService {
     });
   }
 
-  async syncEventFollowers(eventId: string, programId: string) {
+  async syncEventFollowers(eventId: string, programId: string, initiatorDeviceId?: string) {
     const followers = await this.prisma.followedItem.findMany({
       where: {
         programId,
@@ -165,20 +174,51 @@ export class EventService {
       select: { id: true, deviceId: true },
     });
 
-    if (followers.length === 0) {
+    // Zawsze upewnij się, że initiator jest w followers (nawet jeśli już śledzi program)
+    // To gwarantuje, że initiator zobaczy event w sekcji aktywności
+    let allFollowers = [...followers];
+    if (initiatorDeviceId) {
+      const initiatorIsFollowing = followers.some((f) => f.deviceId === initiatorDeviceId);
+      if (!initiatorIsFollowing) {
+        // Utwórz FollowedItem dla initiatora (nawet jeśli nie śledzi programu)
+        const initiatorFollow = await this.prisma.followedItem.upsert({
+          where: {
+            deviceId_programId: {
+              deviceId: initiatorDeviceId,
+              programId,
+            },
+          },
+          update: {},
+          create: {
+            deviceId: initiatorDeviceId,
+            programId,
+            type: FollowType.PROGRAM,
+          },
+          select: { id: true, deviceId: true },
+        });
+        allFollowers.push(initiatorFollow);
+      }
+    }
+
+    if (allFollowers.length === 0) {
       return [];
     }
+
+    // Użyj setUnique aby uniknąć duplikatów
+    const uniqueFollowers = Array.from(
+      new Map(allFollowers.map((f) => [f.id, f])).values()
+    );
 
     await this.prisma.event.update({
       where: { id: eventId },
       data: {
         followers: {
-          connect: followers.map((follow) => ({ id: follow.id })),
+          set: uniqueFollowers.map((follow) => ({ id: follow.id })),
         },
       },
     });
 
-    return followers.map((follow) => follow.deviceId);
+    return uniqueFollowers.map((follow) => follow.deviceId);
   }
 
   async getEvent(eventId: string) {
