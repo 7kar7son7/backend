@@ -95,6 +95,30 @@ export default async function eventsRoutes(app: FastifyInstance) {
         body.programId,
       );
 
+      // Wyślij powiadomienia do wszystkich followers programu (oprócz initiatora)
+      // którzy śledzą ten sam program
+      const recipients = followerDeviceIds.filter((id) => id !== deviceId);
+      
+      if (recipients.length > 0) {
+        const programTitle = event.program.title || 'Program';
+        const channelName = event.program.channel?.name || '';
+        
+        const payload = {
+          eventId: event.id,
+          programId: event.programId,
+          channelId: event.program.channelId,
+          programTitle: channelName ? `${channelName}: ${programTitle}` : programTitle,
+          startsAt: event.program.startsAt.toISOString(),
+          channelLogoUrl: event.program.channel?.logoUrl ?? null,
+        };
+
+        await notificationService.sendEventStartedNotification(recipients, payload);
+        request.log.info(
+          { eventId: event.id, recipientsCount: recipients.length },
+          'Sent event notifications immediately after event creation',
+        );
+      }
+
       const formattedEvent = await finalizeEventResponse(event, followerDeviceIds, deviceId);
       return reply.code(201).send({ data: formattedEvent });
     } catch (error) {
