@@ -41,9 +41,6 @@ export default async function eventsRoutes(app: FastifyInstance) {
     followerDeviceIds: string[],
     initiatorDeviceId: string,
   ) {
-    // NIE wysyłaj powiadomień od razu - będą wysłane dopiero gdy event osiągnie próg
-    // (w confirmEvent, gdy confirmationsCount >= followerCountLimit)
-
     return {
       ...event,
       program: {
@@ -150,6 +147,7 @@ export default async function eventsRoutes(app: FastifyInstance) {
       const { event, followerDeviceIds } = await eventService.createEvent(
         'admin',
         body.programId,
+        { skipInitiatorFollow: true },
       );
 
       const formattedEvent = await finalizeEventResponse(event, followerDeviceIds, 'admin');
