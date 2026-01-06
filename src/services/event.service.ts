@@ -263,7 +263,6 @@ export class EventService {
     const tokens = await this.prisma.deviceToken.findMany({
       where: {
         deviceId: { in: followerDeviceIds },
-        token: { not: null },
       },
       select: {
         deviceId: true,
