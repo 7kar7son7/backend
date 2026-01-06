@@ -242,32 +242,43 @@ export class EventService {
 
     const confirmedDeviceIds = new Set(event.confirmations.map((c) => c.deviceId));
 
+    // Pobierz wszystkich followers programu
     const followers = await this.prisma.followedItem.findMany({
       where: {
         programId,
         type: FollowType.PROGRAM,
       },
-      include: {
-        device: {
-          include: {
-            tokens: {
-              where: {
-                token: { not: null },
-              },
-            },
-          },
-        },
+      select: {
+        deviceId: true,
       },
     });
 
+    const followerDeviceIds = followers.map((f) => f.deviceId);
+
+    if (followerDeviceIds.length === 0) {
+      return [];
+    }
+
+    // Pobierz tokeny dla tych deviceId
+    const tokens = await this.prisma.deviceToken.findMany({
+      where: {
+        deviceId: { in: followerDeviceIds },
+        token: { not: null },
+      },
+      select: {
+        deviceId: true,
+      },
+      distinct: ['deviceId'],
+    });
+
+    const deviceIdsWithTokens = new Set(tokens.map((t) => t.deviceId));
+
     // Filtruj followers - tylko ci którzy mają tokeny i jeszcze nie potwierdzili
-    return followers
-      .filter((follow) => {
-        const hasToken = follow.device.tokens.length > 0;
-        const notConfirmed = !confirmedDeviceIds.has(follow.deviceId);
-        return hasToken && notConfirmed;
-      })
-      .map((follow) => follow.deviceId);
+    return followerDeviceIds.filter((deviceId) => {
+      const hasToken = deviceIdsWithTokens.has(deviceId);
+      const notConfirmed = !confirmedDeviceIds.has(deviceId);
+      return hasToken && notConfirmed;
+    });
   }
 }
 
