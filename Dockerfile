@@ -1,8 +1,5 @@
 FROM node:20-alpine
 
-# Zainstaluj busybox dla /bin/sh (potrzebne dla exec z shell commands)
-RUN apk add --no-cache busybox
-
 WORKDIR /app
 
 # Kopiuj pliki package
