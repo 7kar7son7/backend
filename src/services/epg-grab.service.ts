@@ -1,55 +1,11 @@
-import { spawn } from 'node:child_process';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
 import { resolve } from 'node:path';
 import type { FastifyBaseLogger } from 'fastify';
 
 import { env } from '../config/env';
 
-/**
- * Wykonuje komendę używając spawn z shell: true
- * Node.js automatycznie znajdzie dostępny shell w systemie
- */
-function spawnAsync(
-  command: string,
-  options: { cwd: string }
-): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    // Użyj spawn z shell: true - Node.js automatycznie znajdzie dostępny shell
-    // W Alpine będzie to /bin/ash, w innych systemach /bin/sh lub /bin/bash
-    // Gdy shell: true, command jest wykonywany jako string w shellu
-    const child = spawn(command, [], {
-      cwd: options.cwd,
-      shell: true, // Node.js automatycznie wybierze dostępny shell
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    if (child.stdout) {
-      child.stdout.on('data', (data: Buffer) => {
-        stdout += data.toString();
-      });
-    }
-
-    if (child.stderr) {
-      child.stderr.on('data', (data: Buffer) => {
-        stderr += data.toString();
-      });
-    }
-
-    child.on('error', (error: Error) => {
-      reject(error);
-    });
-
-    child.on('close', (code: number | null) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(new Error(`Command failed with exit code ${code}: ${stderr || stdout}`));
-      }
-    });
-  });
-}
+const execAsync = promisify(exec);
 
 export async function runConfiguredGrab(logger: FastifyBaseLogger) {
   const enabled = env.EPG_GRAB_ENABLED ?? false;
@@ -63,8 +19,13 @@ export async function runConfiguredGrab(logger: FastifyBaseLogger) {
   logger.info({ command, cwd: workingDir }, '🔄 Aktualizuję feed EPG (grab).');
 
   try {
-    const { stdout, stderr } = await spawnAsync(command, {
+    // W Alpine Linux domyślnie jest /bin/ash
+    // Użyj /bin/ash bezpośrednio dla Alpine (lub /bin/sh jeśli jest dostępny)
+    // W Alpine /bin/sh jest zwykle symlinkiem do /bin/ash, ale może nie być dostępny
+    const { stdout, stderr } = await execAsync(command, {
       cwd: workingDir,
+      maxBuffer: 1024 * 1024 * 20,
+      shell: '/bin/ash', // Użyj /bin/ash bezpośrednio dla Alpine Linux
     });
 
     if (stdout.trim().length > 0) {
