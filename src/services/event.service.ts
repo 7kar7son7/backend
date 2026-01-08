@@ -66,7 +66,21 @@ export class EventService {
       throw new Error('Event not found');
     }
 
-    if (event.status === EventStatus.CANCELLED || event.status === EventStatus.EXPIRED) {
+    // Sprawdź czy użytkownik już potwierdził - jeśli tak, zwróć istniejące potwierdzenie
+    const existingConfirmation = event.confirmations.find(
+      (confirmation) => confirmation.deviceId === deviceId,
+    );
+
+    if (existingConfirmation) {
+      return existingConfirmation;
+    }
+
+    // Jeśli event jest już zwalidowany, anulowany lub wygasł, nie pozwalaj na nowe potwierdzenia
+    if (
+      event.status === EventStatus.VALIDATED ||
+      event.status === EventStatus.CANCELLED ||
+      event.status === EventStatus.EXPIRED
+    ) {
       throw new Error('Event is no longer active');
     }
 
@@ -76,14 +90,6 @@ export class EventService {
         data: { status: EventStatus.EXPIRED },
       });
       throw new Error('Event has expired');
-    }
-
-    const existingConfirmation = event.confirmations.find(
-      (confirmation) => confirmation.deviceId === deviceId,
-    );
-
-    if (existingConfirmation) {
-      return existingConfirmation;
     }
 
     const delaySeconds = Math.floor(
