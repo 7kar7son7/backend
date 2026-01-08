@@ -15,7 +15,8 @@ function spawnAsync(
   return new Promise((resolve, reject) => {
     // Użyj spawn z shell: true - Node.js automatycznie znajdzie dostępny shell
     // W Alpine będzie to /bin/ash, w innych systemach /bin/sh lub /bin/bash
-    const child = spawn(command, {
+    // Gdy shell: true, command jest wykonywany jako string w shellu
+    const child = spawn(command, [], {
       cwd: options.cwd,
       shell: true, // Node.js automatycznie wybierze dostępny shell
       stdio: ['ignore', 'pipe', 'pipe'],
