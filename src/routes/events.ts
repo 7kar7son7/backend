@@ -92,9 +92,10 @@ export default async function eventsRoutes(app: FastifyInstance) {
         body.programId,
       );
 
-      // Wyślij powiadomienia do wszystkich followers programu (oprócz initiatora)
-      // którzy śledzą ten sam program
-      const recipients = followerDeviceIds.filter((id) => id !== deviceId);
+      // Pobierz tylko followers którzy mają tokeny push (oprócz initiatora)
+      // To zapewnia że push notifications będą wysyłane tylko do użytkowników z tokenami
+      const followersWithTokens = await eventService.getProgramFollowersWithTokens(body.programId);
+      const recipients = followersWithTokens.filter((id) => id !== deviceId);
       
       if (recipients.length > 0) {
         const programTitle = event.program.title || 'Program';
@@ -111,8 +112,13 @@ export default async function eventsRoutes(app: FastifyInstance) {
 
         await notificationService.sendEventStartedNotification(recipients, payload);
         request.log.info(
-          { eventId: event.id, recipientsCount: recipients.length },
+          { eventId: event.id, recipientsCount: recipients.length, totalFollowers: followerDeviceIds.length },
           'Sent event notifications immediately after event creation',
+        );
+      } else {
+        request.log.info(
+          { eventId: event.id, totalFollowers: followerDeviceIds.length },
+          'No recipients with push tokens found for event notification',
         );
       }
 

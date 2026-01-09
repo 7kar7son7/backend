@@ -95,15 +95,15 @@ export class NotificationService {
     const now = new Date();
     
     // 1. Przypomnienie 15 minut przed startem
-    // Sprawdź programy startujące za 14-15 minut (okno 1 minuty)
+    // Sprawdź programy startujące za 14-16 minut (szersze okno żeby nie przegapić)
     const fourteenMinutesLater = new Date(now.getTime() + 14 * 60 * 1000);
-    const fifteenMinutesLater = new Date(now.getTime() + 15 * 60 * 1000);
+    const sixteenMinutesLater = new Date(now.getTime() + 16 * 60 * 1000);
 
     const programs15min = await this.prisma.program.findMany({
       where: {
         startsAt: {
           gte: fourteenMinutesLater,
-          lte: fifteenMinutesLater,
+          lte: sixteenMinutesLater,
         },
       },
       include: {
@@ -116,11 +116,49 @@ export class NotificationService {
       },
     });
 
+    this.logger.info(
+      { count: programs15min.length, timeWindow: '14-16 min', now: now.toISOString() },
+      'Checking programs for 15min reminder',
+    );
+
     for (const program of programs15min) {
       const deviceIds = program.programFollows.map((follow) => follow.deviceId);
       if (deviceIds.length === 0) {
+        this.logger.info({ programId: program.id, title: program.title }, 'Program has no followers, skipping');
         continue;
       }
+
+      // Sprawdź ile minut i sekund zostało do startu
+      const millisecondsUntilStart = program.startsAt.getTime() - now.getTime();
+      const totalSecondsUntilStart = Math.floor(millisecondsUntilStart / 1000);
+      const minutesUntilStart = Math.floor(totalSecondsUntilStart / 60);
+      const secondsUntilStart = totalSecondsUntilStart % 60;
+      
+      this.logger.info(
+        { 
+          programId: program.id, 
+          title: program.title, 
+          startsAt: program.startsAt.toISOString(),
+          minutesUntilStart,
+          secondsUntilStart,
+          totalSecondsUntilStart,
+          deviceIdsCount: deviceIds.length 
+        },
+        'Checking program for 15min reminder',
+      );
+      
+      // Wysyłaj powiadomienie gdy jest między 14 a 16 minutami przed (840-960 sekund)
+      // To pozwoli złapać programy które są dokładnie 15 minut przed, nawet jeśli job uruchomi się o 14:59 lub 15:59
+      if (totalSecondsUntilStart < 840 || totalSecondsUntilStart > 960) {
+        this.logger.info(
+          { programId: program.id, title: program.title, minutesUntilStart, secondsUntilStart, totalSecondsUntilStart },
+          'Program outside 15min window (14:00-16:00), skipping',
+        );
+        continue;
+      }
+      
+      // Jeśli jest dokładnie 15 minut (900 sekund) lub najbliżej (w oknie 14:30-15:30), wyślij
+      // Preferuj dokładnie 15 minut, ale akceptuj też 14:30-15:30 żeby nie przegapić
 
       // Próbuj utworzyć rekord PRZED wysłaniem - jeśli już istnieje (P2002), nie wysyłaj
       try {
@@ -134,6 +172,10 @@ export class NotificationService {
         });
         
         // Rekord utworzony - teraz wyślij powiadomienie
+        this.logger.info(
+          { programId: program.id, title: program.title, deviceIdsCount: deviceIds.length, minutesUntilStart },
+          'Sending 15min reminder notification',
+        );
         await this.pushNotification.send(deviceIds, {
           title: 'Start za 15 minut',
           body: `${program.title} | ${program.channel?.name ?? ''}`,
@@ -145,6 +187,10 @@ export class NotificationService {
             reminderType: '15_MIN',
           },
         });
+        this.logger.info(
+          { programId: program.id, title: program.title },
+          '15min reminder notification sent successfully',
+        );
       } catch (error: any) {
         // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje - nie wysyłaj
         if (error?.code === 'P2002') {
@@ -169,15 +215,15 @@ export class NotificationService {
     }
 
     // 2. Przypomnienie 5 minut przed startem
-    // Sprawdź programy startujące za 4-5 minut (okno 1 minuty)
+    // Sprawdź programy startujące za 4-6 minut (szersze okno żeby nie przegapić)
     const fourMinutesLater = new Date(now.getTime() + 4 * 60 * 1000);
-    const fiveMinutesLater = new Date(now.getTime() + 5 * 60 * 1000);
+    const sixMinutesLater = new Date(now.getTime() + 6 * 60 * 1000);
 
     const programs5min = await this.prisma.program.findMany({
       where: {
         startsAt: {
           gte: fourMinutesLater,
-          lte: fiveMinutesLater,
+          lte: sixMinutesLater,
         },
       },
       include: {
@@ -190,11 +236,47 @@ export class NotificationService {
       },
     });
 
+    this.logger.info(
+      { count: programs5min.length, timeWindow: '4-6 min', now: now.toISOString() },
+      'Checking programs for 5min reminder',
+    );
+
     for (const program of programs5min) {
       const deviceIds = program.programFollows.map((follow) => follow.deviceId);
       if (deviceIds.length === 0) {
+        this.logger.info({ programId: program.id, title: program.title }, 'Program has no followers, skipping');
         continue;
       }
+
+      const millisecondsUntilStart = program.startsAt.getTime() - now.getTime();
+      const totalSecondsUntilStart = Math.floor(millisecondsUntilStart / 1000);
+      const minutesUntilStart = Math.floor(totalSecondsUntilStart / 60);
+      const secondsUntilStart = totalSecondsUntilStart % 60;
+      
+      this.logger.info(
+        { 
+          programId: program.id, 
+          title: program.title, 
+          startsAt: program.startsAt.toISOString(),
+          minutesUntilStart,
+          secondsUntilStart,
+          totalSecondsUntilStart,
+          deviceIdsCount: deviceIds.length 
+        },
+        'Checking program for 5min reminder',
+      );
+      
+      // Wysyłaj powiadomienie gdy jest między 4 a 6 minutami przed (240-360 sekund)
+      // To pozwoli złapać programy które są dokładnie 5 minut przed, nawet jeśli job uruchomi się o 4:59 lub 5:59
+      if (totalSecondsUntilStart < 240 || totalSecondsUntilStart > 360) {
+        this.logger.info(
+          { programId: program.id, title: program.title, minutesUntilStart, secondsUntilStart, totalSecondsUntilStart },
+          'Program outside 5min window (4:00-6:00), skipping',
+        );
+        continue;
+      }
+      
+      // Jeśli jest dokładnie 5 minut (300 sekund) lub najbliżej (w oknie 4:30-5:30), wyślij
 
       // Próbuj utworzyć rekord PRZED wysłaniem - jeśli już istnieje (P2002), nie wysyłaj
       try {
@@ -208,6 +290,10 @@ export class NotificationService {
         });
         
         // Rekord utworzony - teraz wyślij powiadomienie
+        this.logger.info(
+          { programId: program.id, title: program.title, deviceIdsCount: deviceIds.length },
+          'Sending 5min reminder notification',
+        );
         await this.pushNotification.send(deviceIds, {
           title: 'Start za 5 minut',
           body: `${program.title} | ${program.channel?.name ?? ''}`,
@@ -219,6 +305,10 @@ export class NotificationService {
             reminderType: '5_MIN',
           },
         });
+        this.logger.info(
+          { programId: program.id, title: program.title },
+          '5min reminder notification sent',
+        );
       } catch (error: any) {
         // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje - nie wysyłaj
         if (error?.code === 'P2002') {
@@ -242,13 +332,13 @@ export class NotificationService {
     }
 
     // 3. Powiadomienie gdy program się zacznie
-    // Sprawdź programy które właśnie się zaczęły (0-30 sekund od startu) - wąskie okno aby uniknąć duplikatów
-    const thirtySecondsAgo = new Date(now.getTime() - 30 * 1000);
+    // Sprawdź programy które właśnie się zaczęły (0-60 sekund od startu) - okno aby job co minutę nie przegapił
+    const sixtySecondsAgo = new Date(now.getTime() - 60 * 1000);
 
     const programsStarted = await this.prisma.program.findMany({
       where: {
         startsAt: {
-          gte: thirtySecondsAgo,
+          gte: sixtySecondsAgo,
           lte: now,
         },
       },
@@ -262,9 +352,15 @@ export class NotificationService {
       },
     });
 
+    this.logger.info(
+      { count: programsStarted.length, timeWindow: '0-60s ago', now: now.toISOString() },
+      'Checking programs for started notification',
+    );
+
     for (const program of programsStarted) {
       const deviceIds = program.programFollows.map((follow) => follow.deviceId);
       if (deviceIds.length === 0) {
+        this.logger.info({ programId: program.id, title: program.title }, 'Program has no followers, skipping');
         continue;
       }
 
@@ -280,6 +376,10 @@ export class NotificationService {
         });
         
         // Rekord utworzony - teraz wyślij powiadomienie
+        this.logger.info(
+          { programId: program.id, title: program.title, deviceIdsCount: deviceIds.length },
+          'Sending program started notification',
+        );
         await this.pushNotification.send(deviceIds, {
           title: 'Program właśnie się zaczął',
           body: `${program.title} | ${program.channel?.name ?? ''}`,
@@ -290,6 +390,10 @@ export class NotificationService {
             startsAt: program.startsAt.toISOString(),
           },
         });
+        this.logger.info(
+          { programId: program.id, title: program.title },
+          'Program started notification sent',
+        );
       } catch (error: any) {
         // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje - nie wysyłaj
         if (error?.code === 'P2002') {

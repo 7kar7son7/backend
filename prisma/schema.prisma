@@ -40,6 +40,7 @@ model Program {
   eventWindows   Event[]
   programFollows FollowedItem[]
   channel        Channel        @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  notificationLogs ProgramNotificationLog[]
 
   @@index([channelId, startsAt])
   @@index([endsAt])
@@ -154,6 +155,18 @@ model DeviceToken {
   @@map("device_tokens")
 }
 
+model ProgramNotificationLog {
+  id           String              @id @default(uuid()) @db.Uuid
+  programId    String              @db.Uuid
+  reminderType ProgramReminderType
+  sentAt       DateTime            @default(now()) @db.Timestamptz(6)
+  program      Program             @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, reminderType], map: "program_notification_unique")
+  @@index([programId, sentAt])
+  @@map("program_notification_log")
+}
+
 enum FollowType {
   CHANNEL
   PROGRAM
@@ -183,4 +196,11 @@ enum PointReason {
   STREAK_BONUS
   MANUAL_ADJUSTMENT
   DOUBLE_CONFIRM
+}
+
+enum ProgramReminderType {
+  FIFTEEN_MIN
+  FIVE_MIN
+  STARTED
+  EVENT_STARTED
 }

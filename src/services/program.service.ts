@@ -8,11 +8,22 @@ export class ProgramService {
 
     const where: Prisma.ProgramWhereInput = {
       channelId,
-      startsAt: { gte: from ?? new Date() },
     };
 
-    if (to) {
-      where.endsAt = { lte: to };
+    // Jeśli podano zakres dat, zwróć programy które się przecinają z tym zakresem
+    // Program przecina się z zakresem jeśli: startsAt < to AND endsAt > from
+    if (from && to) {
+      where.startsAt = { lt: to };
+      where.endsAt = { gt: from };
+    } else if (from) {
+      // Jeśli tylko from, zwróć programy które jeszcze się nie skończyły
+      where.endsAt = { gt: from };
+    } else if (to) {
+      // Jeśli tylko to, zwróć programy które zaczynają się przed to
+      where.startsAt = { lt: to };
+    } else {
+      // Jeśli brak parametrów, zwróć tylko przyszłe programy
+      where.startsAt = { gte: new Date() };
     }
 
     return this.prisma.program.findMany({

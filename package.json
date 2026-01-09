@@ -16,7 +16,8 @@
     "epg:import:pl": "tsx src/scripts/import-selected-channels.ts",
     "db:check:programs": "tsx src/scripts/check-programs.ts",
     "test:epg-source": "tsx src/scripts/test-epg-source.ts",
-    "check:epg-channels": "tsx src/scripts/check-epg-channels.ts"
+    "check:epg-channels": "tsx src/scripts/check-epg-channels.ts",
+    "logos:restore": "tsx src/scripts/restore-logos.ts"
   },
   "keywords": [],
   "author": "",
@@ -41,6 +42,7 @@
     "fast-xml-parser": "^4.4.3",
     "fastify": "^5.6.2",
     "fastify-plugin": "^5.1.0",
+    "firebase-admin": "^13.6.0",
     "luxon": "^3.5.0",
     "node-cron": "^4.2.1",
     "pino-pretty": "^13.1.2",

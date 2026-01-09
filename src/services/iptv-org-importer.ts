@@ -2,27 +2,22 @@ import { PrismaClient } from '@prisma/client';
 import { FastifyBaseLogger } from 'fastify';
 import { XMLParser } from 'fast-xml-parser';
 import { DateTime } from 'luxon';
-import { readFile } from 'node:fs/promises';
+import { readFile, access } from 'node:fs/promises';
 import { fetch } from 'undici';
 import { isAbsolute, resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
+import { constants } from 'node:fs';
 
 import { env } from '../config/env';
 import { EpgImportService, type EpgChannel, type EpgFeed, type EpgProgram } from './epg-import.service';
 
 // Lista źródeł EPG z priorytetem - pierwsze działające będzie użyte
-// epg.ovh oferuje różne wersje EPG dla Polski
-// Lista źródeł EPG z priorytetem - pierwsze działające będzie użyte
-// Próbujemy różnych źródeł EPG dla Polski - automatyczny fallback
+// Używamy tylko open-epg.com (poland.xml) - sprawdzone źródło
 const EPG_SOURCES = [
+  'https://www.open-epg.com/files/poland2.xml.gz', // Open-EPG - 618 kanałów, 621 KB (skompresowane), aktualizacja codzienna - PRIORYTET
   'https://www.open-epg.com/files/poland1.xml.gz', // Open-EPG - 583 kanały, 1.73 MB (skompresowane), aktualizacja codzienna
-  'https://www.open-epg.com/files/poland2.xml.gz', // Open-EPG - 618 kanałów, 621 KB (skompresowane), aktualizacja codzienna
-  'https://www.open-epg.com/files/poland1.xml', // Open-EPG - fallback bez kompresji (15.06 MB, 583 kanały)
   'https://www.open-epg.com/files/poland2.xml', // Open-EPG - fallback bez kompresji (7.38 MB, 618 kanałów)
-  'https://epg.ovh/plar.xml', // 10-dniowe EPG z 5-dniowym archiwum (NAJLEPSZE - najnowsze dane)
-  'https://epg.ovh/pl.xml', // 5-dniowe EPG (standardowe)
-  'https://epg.ovh/pltv.xml', // EPG z dodatkowymi informacjami
-  'https://raw.githubusercontent.com/iptv-org/epg/master/guides/pl/pl.xml', // GitHub iptv-org (backup)
+  'https://www.open-epg.com/files/poland1.xml', // Open-EPG - fallback bez kompresji (15.06 MB, 583 kanały)
 ] as const;
 
 const DEFAULT_IPTV_URL = EPG_SOURCES[0];
@@ -175,10 +170,24 @@ export async function importIptvOrgEpg(
   }
 
   if (!parsed?.tv) {
+    // Sprawdź czy to HTML z błędem (może parser sparsował HTML jako XML)
+    const parsedStr = JSON.stringify(parsed || {});
+    if (parsedStr.toLowerCase().includes('download limit') || 
+        parsedStr.toLowerCase().includes('you reached the download limit')) {
+      logger.error(
+        {
+          parsedKeys: Object.keys(parsed || {}),
+          parsedPreview: parsedStr.substring(0, 500),
+        },
+        'Serwer zwrócił HTML z błędem (limit pobrań) zamiast XML EPG',
+      );
+      throw new Error('Serwer zwrócił błąd: limit pobrań przekroczony (20 pobrań dziennie)');
+    }
+    
     logger.error(
       {
         parsedKeys: Object.keys(parsed || {}),
-        parsedPreview: JSON.stringify(parsed).substring(0, 500),
+        parsedPreview: parsedStr.substring(0, 500),
       },
       'Invalid EPG feed format - missing tv element',
     );
@@ -549,9 +558,20 @@ async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
     if (isGzip) {
       logger.info('📦 Wykryto plik gzip, dekompresuję...');
       const buffer = await response.arrayBuffer();
-      const decompressed = gunzipSync(Buffer.from(buffer));
-      text = decompressed.toString('utf-8');
-      logger.info(`✅ Zdekompresowano gzip (${text.length} znaków)`);
+      try {
+        const decompressed = gunzipSync(Buffer.from(buffer));
+        text = decompressed.toString('utf-8');
+        logger.info(`✅ Zdekompresowano gzip (${text.length} znaków)`);
+      } catch (decompressError) {
+        // Jeśli dekompresja się nie powiodła, spróbuj potraktować jako zwykły XML
+        // Może serwer zwraca zwykły XML mimo rozszerzenia .gz
+        logger.warn({ 
+          error: decompressError instanceof Error ? decompressError.message : String(decompressError),
+          url 
+        }, '⚠️ Nie udało się zdekompresować jako gzip, próbuję jako zwykły XML...');
+        text = Buffer.from(buffer).toString('utf-8');
+        logger.info(`✅ Pobrano jako zwykły XML (${text.length} znaków)`);
+      }
     } else {
       text = await response.text();
       logger.info(`✅ Pobrano treść (${text.length} znaków)`);
@@ -559,6 +579,23 @@ async function loadFromUrl(url: string, logger: FastifyBaseLogger) {
     
     if (text.length === 0) {
       throw new Error('Otrzymano pustą odpowiedź z serwera');
+    }
+    
+    // Sprawdź czy serwer zwrócił HTML z błędem (np. limit pobrań)
+    const textLower = text.toLowerCase();
+    if (textLower.includes('download limit') || 
+        textLower.includes('you reached the download limit') ||
+        textLower.includes('try again tomorrow') ||
+        (textLower.includes('<html') && !textLower.includes('<?xml'))) {
+      const errorMsg = text.includes('download limit') 
+        ? 'Serwer zwrócił błąd: limit pobrań przekroczony (20 pobrań dziennie)'
+        : 'Serwer zwrócił HTML zamiast XML';
+      logger.warn({ 
+        url, 
+        textPreview: text.substring(0, 300),
+        errorMsg 
+      }, '⚠️ Serwer zwrócił błąd zamiast pliku EPG');
+      throw new Error(errorMsg);
     }
     
     // Sprawdź czy to wygląda na XML
@@ -861,6 +898,15 @@ async function loadLogoMap(logger: FastifyBaseLogger) {
     }
 
     try {
+      // Sprawdź czy plik istnieje przed próbą otwarcia
+      try {
+        await access(resolvedPath, constants.F_OK);
+      } catch {
+        // Plik nie istnieje - to jest OK, zwróć pustą mapę
+        logger.debug({ path: resolvedPath }, 'Plik logos.json nie istnieje, używam pustej mapy logotypów');
+        return new Map<string, string>();
+      }
+
       const raw = await readFile(resolvedPath, 'utf-8');
       const entries = JSON.parse(raw) as LogoEntry[];
       const grouped = new Map<string, LogoEntry[]>();
@@ -887,6 +933,11 @@ async function loadLogoMap(logger: FastifyBaseLogger) {
       logoMapCache = map;
       return map;
     } catch (error) {
+      // Jeśli błąd to ENOENT (plik nie istnieje), to jest OK - zwróć pustą mapę
+      if ((error as any)?.code === 'ENOENT') {
+        logger.debug({ path: resolvedPath }, 'Plik logos.json nie istnieje, używam pustej mapy logotypów');
+        return new Map<string, string>();
+      }
       logger.warn(
         { err: error, path: resolvedPath },
         'Nie udało się wczytać pliku z logotypami kanałów.',
@@ -918,6 +969,15 @@ async function loadAllowedChannelSlugs(logger: FastifyBaseLogger) {
     }
 
     try {
+      // Sprawdź czy plik istnieje przed próbą otwarcia
+      try {
+        await access(resolvedPath, constants.F_OK);
+      } catch {
+        // Plik nie istnieje - to jest OK, zwróć pusty Set
+        logger.debug({ path: resolvedPath }, 'Plik channels.json nie istnieje, używam pustej listy kanałów');
+        return new Set<string>();
+      }
+
       const raw = await readFile(resolvedPath, 'utf-8');
       const entries = JSON.parse(raw) as ChannelEntry[];
       const slugs = new Set<string>();
@@ -941,6 +1001,11 @@ async function loadAllowedChannelSlugs(logger: FastifyBaseLogger) {
       allowedChannelSlugsCache = slugs;
       return slugs;
     } catch (error) {
+      // Jeśli błąd to ENOENT (plik nie istnieje), to jest OK - zwróć pusty Set
+      if ((error as any)?.code === 'ENOENT') {
+        logger.debug({ path: resolvedPath }, 'Plik channels.json nie istnieje, używam pustej listy kanałów');
+        return new Set<string>();
+      }
       logger.warn(
         { err: error, path: resolvedPath },
         'Nie udało się wczytać pliku kanałów (channels.json).',

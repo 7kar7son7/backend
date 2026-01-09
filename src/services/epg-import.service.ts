@@ -56,15 +56,34 @@ export class EpgImportService {
         `Import kanału ${index + 1}/${totalChannels}: ${channel.name} (${channel.programs?.length ?? 0} programów)`,
       );
 
+      // Przygotuj dane do update - nie nadpisuj logoUrl jeśli nie ma nowego logotypu
+      // WAŻNE: Nie dodajemy logoUrl do updateData jeśli nie ma nowego logotypu w feedzie
+      // Dzięki temu istniejące logotypy w bazie nie zostaną nadpisane na null
+      const updateData: {
+        name: string;
+        category: string | null;
+        description: string | null;
+        logoUrl?: string;
+        countryCode: string | null;
+      } = {
+        name: channel.name,
+        category: channel.category ?? null,
+        description: channel.description ?? null,
+        countryCode: channel.countryCode ?? null,
+      };
+
+      // Aktualizuj logoUrl TYLKO jeśli jest nowy logotyp w feedzie
+      // Jeśli channel.logo jest undefined/null, NIE dodajemy logoUrl do updateData
+      // Dzięki temu Prisma nie nadpisze istniejącego logoUrl na null
+      if (channel.logo !== undefined && channel.logo !== null && channel.logo.trim() !== '') {
+        updateData.logoUrl = channel.logo;
+      }
+      // Jeśli nie ma logotypu w feedzie, updateData.logoUrl pozostaje undefined
+      // i Prisma nie zaktualizuje tego pola (zachowa istniejącą wartość)
+
       const channelRecord = await this.prisma.channel.upsert({
         where: { externalId: channel.id },
-        update: {
-          name: channel.name,
-          category: channel.category ?? null,
-          description: channel.description ?? null,
-          logoUrl: channel.logo ?? null,
-          countryCode: channel.countryCode ?? null,
-        },
+        update: updateData,
         create: {
           externalId: channel.id,
           name: channel.name,

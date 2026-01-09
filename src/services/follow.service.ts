@@ -4,13 +4,79 @@ export class FollowService {
   constructor(private readonly prisma: PrismaClient) {}
 
   async list(deviceId: string) {
-    return this.prisma.followedItem.findMany({
+    const items = await this.prisma.followedItem.findMany({
       where: { deviceId },
       include: {
         channel: true,
-        program: true,
+        program: {
+          include: {
+            channel: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
+    });
+
+    // Formatuj odpowiedź tak, aby program miał channelName i channelLogoUrl
+    return items.map((item) => {
+      const base = {
+        id: item.id,
+        deviceId: item.deviceId,
+        type: item.type,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      };
+
+      if (item.type === 'CHANNEL' && item.channel) {
+        return {
+          ...base,
+          channel: {
+            id: item.channel.id,
+            externalId: item.channel.externalId,
+            name: item.channel.name,
+            description: item.channel.description,
+            logoUrl: item.channel.logoUrl,
+            category: item.channel.category,
+            countryCode: item.channel.countryCode,
+          },
+          program: null,
+        };
+      }
+
+      if (item.type === 'PROGRAM' && item.program) {
+        return {
+          ...base,
+          channel: item.program.channel ? {
+            id: item.program.channel.id,
+            externalId: item.program.channel.externalId,
+            name: item.program.channel.name,
+            description: item.program.channel.description,
+            logoUrl: item.program.channel.logoUrl,
+            category: item.program.channel.category,
+            countryCode: item.program.channel.countryCode,
+          } : null,
+          program: {
+            id: item.program.id,
+            title: item.program.title,
+            channelId: item.program.channelId,
+            channelName: item.program.channel?.name ?? item.program.channelId ?? 'Nieznany kanał',
+            channelLogoUrl: item.program.channel?.logoUrl ?? null,
+            description: item.program.description,
+            seasonNumber: item.program.seasonNumber,
+            episodeNumber: item.program.episodeNumber,
+            startsAt: item.program.startsAt instanceof Date ? item.program.startsAt.toISOString() : item.program.startsAt,
+            endsAt: item.program.endsAt instanceof Date ? item.program.endsAt.toISOString() : item.program.endsAt,
+            imageUrl: item.program.imageUrl,
+            tags: item.program.tags ?? [],
+          },
+        };
+      }
+
+      return {
+        ...base,
+        channel: null,
+        program: null,
+      };
     });
   }
 
