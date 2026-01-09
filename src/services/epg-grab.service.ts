@@ -19,12 +19,11 @@ export async function runConfiguredGrab(logger: FastifyBaseLogger) {
   logger.info({ command, cwd: workingDir }, '🔄 Aktualizuję feed EPG (grab).');
 
   try {
-    // Użyj exec z shell: true - automatycznie użyje domyślnego shell z systemu
-    // W Alpine Linux to będzie /bin/sh (symlink do /bin/ash)
+    // Użyj exec z shell: '/bin/sh' - w Alpine Linux /bin/sh jest zawsze dostępny
     const { stdout, stderr } = await execAsync(command, {
       cwd: workingDir,
       maxBuffer: 1024 * 1024 * 20, // 20MB buffer
-      shell: true, // Użyj domyślnego shell z systemu
+      shell: '/bin/sh', // Użyj /bin/sh (w Alpine Linux to symlink do /bin/ash)
     });
 
     if (stdout.trim().length > 0) {
