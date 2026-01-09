@@ -231,6 +231,45 @@ export class EventService {
     });
   }
 
+  /**
+   * Zwraca deviceIds followers programu, którzy mają zarejestrowane tokeny push
+   * (bez sprawdzania potwierdzeń - użyj getProgramFollowersForNotification jeśli potrzebujesz filtrować potwierdzenia)
+   */
+  async getProgramFollowersWithTokens(programId: string): Promise<string[]> {
+    // Pobierz wszystkich followers programu
+    const followers = await this.prisma.followedItem.findMany({
+      where: {
+        programId,
+        type: FollowType.PROGRAM,
+      },
+      select: {
+        deviceId: true,
+      },
+    });
+
+    const followerDeviceIds = followers.map((f) => f.deviceId);
+
+    if (followerDeviceIds.length === 0) {
+      return [];
+    }
+
+    // Pobierz tokeny dla tych deviceId
+    const tokens = await this.prisma.deviceToken.findMany({
+      where: {
+        deviceId: { in: followerDeviceIds },
+      },
+      select: {
+        deviceId: true,
+      },
+      distinct: ['deviceId'],
+    });
+
+    const deviceIdsWithTokens = new Set(tokens.map((t) => t.deviceId));
+
+    // Zwróć tylko tych followers, którzy mają tokeny push
+    return followerDeviceIds.filter((deviceId) => deviceIdsWithTokens.has(deviceId));
+  }
+
   async getProgramFollowersForNotification(eventId: string, programId: string) {
     // Pobierz wszystkich followers programu, którzy jeszcze nie potwierdzili tego eventu
     const event = await this.prisma.event.findUnique({

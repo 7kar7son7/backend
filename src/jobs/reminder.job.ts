@@ -53,8 +53,17 @@ export function startReminderJob(app: FastifyInstance): ScheduledTask {
           event.confirmations.map((confirmation) => confirmation.deviceId),
         );
 
+        // Pobierz tylko followers którzy mają tokeny push
+        const followersWithTokens = await eventService.getProgramFollowersWithTokens(event.programId);
+        const followersWithTokensSet = new Set(followersWithTokens);
+
         for (const follower of event.followers) {
           if (confirmedDeviceIds.has(follower.deviceId)) {
+            continue;
+          }
+
+          // Pomiń followers bez tokenów push
+          if (!followersWithTokensSet.has(follower.deviceId)) {
             continue;
           }
 
