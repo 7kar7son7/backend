@@ -28,6 +28,16 @@ export class NotificationService {
   }
 
   async sendEventStartedNotification(deviceIds: string[], payload: ReminderPayload) {
+    this.logger.info(
+      {
+        eventId: payload.eventId,
+        programId: payload.programId,
+        deviceIdsCount: deviceIds.length,
+        deviceIds: deviceIds,
+      },
+      'sendEventStartedNotification called',
+    );
+
     // Sprawdź czy powiadomienie dla tego eventu już zostało wysłane
     // Używamy flagi validatedAt w Event jako wskaźnika że powiadomienia zostały wysłane
     const event = await this.prisma.event.findUnique({
@@ -70,7 +80,25 @@ export class NotificationService {
       message.image = payload.channelLogoUrl;
     }
     
+    this.logger.info(
+      {
+        eventId: payload.eventId,
+        deviceIdsCount: deviceIds.length,
+        messageTitle: message.title,
+        messageBody: message.body,
+      },
+      'Calling pushNotification.send',
+    );
+    
     await this.pushNotification.send(deviceIds, message);
+    
+    this.logger.info(
+      {
+        eventId: payload.eventId,
+        deviceIdsCount: deviceIds.length,
+      },
+      'pushNotification.send completed',
+    );
   }
 
   async sendDailyReminder() {

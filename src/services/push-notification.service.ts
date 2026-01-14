@@ -36,9 +36,50 @@ export class PushNotificationService {
         // Sprawdź czy już jest zainicjalizowane
         try {
           this.firebaseAdmin = admin.app();
+          this.logger.info('Firebase Admin SDK already initialized');
         } catch {
           // Nie ma jeszcze zainicjalizowanego app, stwórz nowe
-          const privateKey = env.FCM_PRIVATE_KEY.replace(/\\n/g, '\n');
+          // Parsuj klucz prywatny - zamień \n na rzeczywiste znaki nowej linii
+          // i usuń białe znaki na początku/końcu
+          let privateKey = env.FCM_PRIVATE_KEY.trim();
+          
+          // Zamień literalne \n na rzeczywiste znaki nowej linii
+          privateKey = privateKey.replace(/\\n/g, '\n');
+          
+          // Jeśli nadal nie ma znaków nowej linii, może hosting już je przekonwertował
+          // lub klucz jest w jednej linii - spróbuj dodać znaki nowej linii po BEGIN i przed END
+          if (!privateKey.includes('\n') && privateKey.includes('-----BEGIN')) {
+            privateKey = privateKey
+              .replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n')
+              .replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----');
+          }
+          
+          // Sprawdź czy klucz wygląda na prawidłowy PEM
+          if (!privateKey.includes('-----BEGIN PRIVATE KEY-----') || !privateKey.includes('-----END PRIVATE KEY-----')) {
+            this.logger.error(
+              {
+                hasBegin: privateKey.includes('-----BEGIN'),
+                hasEnd: privateKey.includes('-----END'),
+                keyLength: privateKey.length,
+                keyPreview: privateKey.substring(0, 100),
+                originalKeyLength: env.FCM_PRIVATE_KEY.length,
+                originalKeyPreview: env.FCM_PRIVATE_KEY.substring(0, 100),
+              },
+              'FCM_PRIVATE_KEY does not appear to be in valid PEM format',
+            );
+            throw new Error('Invalid PEM format: missing BEGIN or END markers');
+          }
+          
+          this.logger.debug(
+            {
+              keyLength: privateKey.length,
+              hasNewlines: privateKey.includes('\n'),
+              beginPos: privateKey.indexOf('-----BEGIN'),
+              endPos: privateKey.indexOf('-----END'),
+            },
+            'Attempting to initialize Firebase Admin SDK with parsed private key',
+          );
+          
           this.firebaseAdmin = admin.initializeApp({
             credential: admin.credential.cert({
               projectId: env.FCM_PROJECT_ID,
@@ -46,16 +87,47 @@ export class PushNotificationService {
               privateKey: privateKey,
             }),
           });
-          this.logger.info('Firebase Admin SDK initialized');
+          this.logger.info('Firebase Admin SDK initialized successfully');
         }
       } catch (error) {
-        this.logger.warn({ error }, 'Failed to initialize Firebase Admin SDK');
+        this.logger.error(
+          {
+            error: error instanceof Error ? {
+              message: error.message,
+              stack: error.stack,
+            } : error,
+            hasClientEmail: !!env.FCM_CLIENT_EMAIL,
+            hasPrivateKey: !!env.FCM_PRIVATE_KEY,
+            hasProjectId: !!env.FCM_PROJECT_ID,
+            privateKeyLength: env.FCM_PRIVATE_KEY?.length || 0,
+          },
+          'Failed to initialize Firebase Admin SDK - push notifications will NOT work',
+        );
       }
+    } else {
+      this.logger.error(
+        {
+          hasClientEmail: !!env.FCM_CLIENT_EMAIL,
+          hasPrivateKey: !!env.FCM_PRIVATE_KEY,
+          hasProjectId: !!env.FCM_PROJECT_ID,
+        },
+        'Firebase Admin SDK credentials not fully configured - push notifications will NOT work. Legacy API is disabled and deprecated.',
+      );
     }
   }
 
   async send(deviceIds: string[], message: PushMessage) {
+    this.logger.info(
+      {
+        deviceIdsCount: deviceIds.length,
+        deviceIds: deviceIds,
+        messageTitle: message.title,
+      },
+      'PushNotificationService.send called',
+    );
+
     if (deviceIds.length === 0) {
+      this.logger.warn('No deviceIds provided to PushNotificationService.send');
       return;
     }
 
@@ -63,36 +135,64 @@ export class PushNotificationService {
     const deviceTokens = await this.deviceTokenService.getTokensForDevices(deviceIds);
     const tokens = deviceTokens.map((dt) => dt.token).filter(Boolean);
 
+    this.logger.info(
+      {
+        deviceIdsCount: deviceIds.length,
+        deviceTokensFound: deviceTokens.length,
+        tokensFound: tokens.length,
+        deviceIds: deviceIds,
+        deviceTokens: deviceTokens.map((dt) => ({ deviceId: dt.deviceId, hasToken: !!dt.token })),
+      },
+      'FCM tokens lookup result',
+    );
+
     if (tokens.length === 0) {
-      this.logger.debug({ deviceIds }, 'No FCM tokens found for deviceIds');
+      this.logger.warn(
+        {
+          deviceIds: deviceIds,
+          deviceTokens: deviceTokens,
+        },
+        'No FCM tokens found for deviceIds - push notifications will NOT be sent',
+      );
       return;
     }
 
-    // Spróbuj użyć Firebase Admin SDK (nowsze API, lepsze)
+    // Użyj Firebase Admin SDK (v1 API) - to jest jedyne wspierane API
     if (this.firebaseAdmin) {
       try {
         await this.sendWithAdminSDK(tokens, message);
         return;
       } catch (error) {
-        this.logger.warn({ error }, 'Failed to send with Firebase Admin SDK, falling back to legacy API');
+        this.logger.error(
+          {
+            error: error instanceof Error ? {
+              message: error.message,
+              code: (error as any).code,
+            } : error,
+            tokenCount: tokens.length,
+          },
+          'Failed to send with Firebase Admin SDK (v1 API) - push notifications failed',
+        );
+        // Nie próbuj używać legacy API - jest wyłączone i wycofane
+        return;
       }
     }
 
-    // Fallback do legacy FCM API jeśli nie ma Admin SDK lub się nie udało
-    if (!env.FCM_SERVER_KEY) {
-      this.logger.warn(
-        {
-          count: deviceIds.length,
-          title: message.title,
-          body: message.body,
-          data: message.data,
-        },
-        'FCM_SERVER_KEY not configured and Firebase Admin SDK not available - cannot send notifications',
-      );
-      return;
-    }
-
-    await this.sendWithLegacyAPI(tokens, message);
+    // Jeśli Admin SDK nie jest dostępny, nie możemy wysłać powiadomień
+    // Legacy API jest wyłączone i wycofane (20.06.2024)
+    this.logger.error(
+      {
+        count: deviceIds.length,
+        title: message.title,
+        body: message.body,
+        data: message.data,
+        hasFirebaseAdmin: !!this.firebaseAdmin,
+        hasClientEmail: !!env.FCM_CLIENT_EMAIL,
+        hasPrivateKey: !!env.FCM_PRIVATE_KEY,
+        hasProjectId: !!env.FCM_PROJECT_ID,
+      },
+      'Firebase Admin SDK (v1 API) not available - cannot send push notifications. Legacy API is disabled and deprecated.',
+    );
   }
 
   private async sendWithAdminSDK(tokens: string[], message: PushMessage) {
