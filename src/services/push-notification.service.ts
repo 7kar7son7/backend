@@ -43,8 +43,29 @@ export class PushNotificationService {
           // i usuń białe znaki na początku/końcu
           let privateKey = env.FCM_PRIVATE_KEY.trim();
           
-          // Zamień literalne \n na rzeczywiste znaki nowej linii
+          // Logowanie do debugowania formatu klucza
+          this.logger.debug({
+            originalKeyLength: env.FCM_PRIVATE_KEY.length,
+            originalKeyFirstChars: env.FCM_PRIVATE_KEY.substring(0, 50),
+            originalKeyLastChars: env.FCM_PRIVATE_KEY.substring(Math.max(0, env.FCM_PRIVATE_KEY.length - 50)),
+            hasNewlines: env.FCM_PRIVATE_KEY.includes('\n'),
+            hasLiteralN: env.FCM_PRIVATE_KEY.includes('\\n'),
+          }, 'FCM_PRIVATE_KEY raw format analysis');
+          
+          // Zamień literalne \n na rzeczywiste znaki nowej linii (obsługa różnych formatów)
+          // Railway/Heroku mogą przechowywać z różnymi escapowaniami
           privateKey = privateKey.replace(/\\n/g, '\n');
+          privateKey = privateKey.replace(/\\\\n/g, '\n'); // Podwójne escapowanie
+          privateKey = privateKey.replace(/\\r\\n/g, '\n'); // Windows line endings
+          privateKey = privateKey.replace(/\\r/g, '\n'); // Old Mac line endings
+          
+          // Usuń cudzysłowy jeśli klucz jest w nich opakowany (JSON format)
+          if ((privateKey.startsWith('"') && privateKey.endsWith('"')) ||
+              (privateKey.startsWith("'") && privateKey.endsWith("'"))) {
+            privateKey = privateKey.slice(1, -1);
+            // Zamień ponownie \n po usunięciu cudzysłowów
+            privateKey = privateKey.replace(/\\n/g, '\n');
+          }
           
           // Jeśli nadal nie ma znaków nowej linii, może hosting już je przekonwertował
           // lub klucz jest w jednej linii - spróbuj dodać znaki nowej linii po BEGIN i przed END
