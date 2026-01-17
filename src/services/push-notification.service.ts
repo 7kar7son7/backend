@@ -204,14 +204,30 @@ export class PushNotificationService {
             'Attempting to initialize Firebase Admin SDK with parsed private key',
           );
           
-          this.firebaseAdmin = admin.initializeApp({
-            credential: admin.credential.cert({
-              projectId: env.FCM_PROJECT_ID,
-              clientEmail: env.FCM_CLIENT_EMAIL,
-              privateKey: privateKey,
-            }),
-          });
-          this.logger.info('Firebase Admin SDK initialized successfully');
+          try {
+            this.firebaseAdmin = admin.initializeApp({
+              credential: admin.credential.cert({
+                projectId: env.FCM_PROJECT_ID,
+                clientEmail: env.FCM_CLIENT_EMAIL,
+                privateKey: privateKey,
+              }),
+            });
+            this.logger.info('Firebase Admin SDK initialized successfully');
+          } catch (initError: any) {
+            // Jeśli błąd "already initialized", spróbuj użyć istniejącego app
+            if (initError?.code === 'app/duplicate-app' || initError?.message?.includes('already exists')) {
+              try {
+                this.firebaseAdmin = admin.app();
+                this.logger.info('Firebase Admin SDK already initialized, using existing app');
+              } catch (getAppError) {
+                this.logger.error({ error: getAppError, initError }, 'Failed to get existing Firebase app');
+                throw initError; // Rzuć oryginalny błąd
+              }
+            } else {
+              this.logger.error({ error: initError, keyPreview: privateKey.substring(0, 50) }, 'Failed to initialize Firebase Admin SDK');
+              throw initError;
+            }
+          }
         }
       } catch (error) {
         this.logger.error(
@@ -249,6 +265,16 @@ export class PushNotificationService {
       },
       'PushNotificationService.send called',
     );
+
+    // Jeśli Firebase Admin SDK nie jest zainicjalizowany, spróbuj ponownie
+    if (!this.firebaseAdmin) {
+      this.logger.warn('Firebase Admin SDK not initialized, attempting to reinitialize...');
+      try {
+        this.initializeFirebaseAdmin();
+      } catch (error) {
+        this.logger.error({ error }, 'Failed to reinitialize Firebase Admin SDK');
+      }
+    }
 
     if (deviceIds.length === 0) {
       this.logger.warn('No deviceIds provided to PushNotificationService.send');
