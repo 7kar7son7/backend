@@ -5,7 +5,9 @@ import { env } from '../config/env';
 import { NotificationService } from '../services/notification.service';
 
 export function startDailyReminderJob(app: FastifyInstance): ScheduledTask | null {
-  const enabled = env.EPG_AUTO_IMPORT_ENABLED ?? false;
+  // Codzienne przypomnienie powinno działać niezależnie od EPG_AUTO_IMPORT_ENABLED
+  // Używamy osobnej zmiennej lub domyślnie włączamy
+  const enabled = env.DAILY_REMINDER_ENABLED ?? true; // Domyślnie włączone
   const schedule = env.DAILY_REMINDER_SCHEDULE ?? '0 11 * * *';
   const timezone = env.EPG_AUTO_IMPORT_TIMEZONE ?? 'Europe/Warsaw';
 
