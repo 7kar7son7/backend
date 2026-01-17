@@ -6,7 +6,8 @@ import { PushNotificationService, type PushMessage } from './push-notification.s
 
 export class NotificationService {
   constructor(private readonly prisma: PrismaClient, private readonly logger: FastifyBaseLogger) {
-    this.pushNotification = new PushNotificationService(prisma, logger);
+    // Użyj singleton zamiast tworzyć nową instancję
+    this.pushNotification = PushNotificationService.getInstance(prisma, logger);
   }
 
   private readonly pushNotification: PushNotificationService;

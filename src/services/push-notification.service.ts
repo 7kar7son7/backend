@@ -17,9 +17,20 @@ export type PushMessage = {
 const FCM_ENDPOINT = 'https://fcm.googleapis.com/fcm/send';
 const MAX_TOKENS_PER_REQUEST = 1000;
 
+// Singleton instance
+let pushNotificationServiceInstance: PushNotificationService | null = null;
+
 export class PushNotificationService {
   private readonly deviceTokenService: DeviceTokenService;
   private firebaseAdmin: admin.app.App | null = null;
+  
+  // Singleton getter
+  static getInstance(prisma: PrismaClient, logger: FastifyBaseLogger): PushNotificationService {
+    if (!pushNotificationServiceInstance) {
+      pushNotificationServiceInstance = new PushNotificationService(prisma, logger);
+    }
+    return pushNotificationServiceInstance;
+  }
 
   constructor(
     private readonly prisma: PrismaClient,
