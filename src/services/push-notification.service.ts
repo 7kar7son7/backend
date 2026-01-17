@@ -61,18 +61,37 @@ export class PushNotificationService {
           }, 'FCM_PRIVATE_KEY FULL ANALYSIS - DEBUGGING');
           
           // Jeśli klucz wygląda jak base64 z dwukropkami (Railway może tak kodować), spróbuj zdekodować
+          // Railway może kodować klucz w base64 i dzielić go na części z dwukropkami
           if (privateKey.includes(':') && !privateKey.includes('-----BEGIN') && /^[A-Za-z0-9+/=:]+$/.test(privateKey)) {
             this.logger.info('Detected base64-encoded key with colons, attempting to decode...');
             try {
               // Połącz części base64 (usunąć dwukropki) i zdekoduj
               const base64String = privateKey.replace(/:/g, '');
-              const decoded = Buffer.from(base64String, 'base64').toString('utf-8');
+              
+              // Sprawdź czy base64 jest poprawny (długość powinna być wielokrotnością 4)
+              const paddingNeeded = (4 - (base64String.length % 4)) % 4;
+              const paddedBase64 = base64String + '='.repeat(paddingNeeded);
+              
+              const decoded = Buffer.from(paddedBase64, 'base64').toString('utf-8');
+              
               this.logger.debug({
+                originalLength: privateKey.length,
+                base64Length: base64String.length,
+                paddedLength: paddedBase64.length,
                 decodedLength: decoded.length,
-                decodedFirstChars: decoded.substring(0, 50),
-                decodedLastChars: decoded.substring(Math.max(0, decoded.length - 50)),
+                decodedFirstChars: decoded.substring(0, 100),
+                decodedLastChars: decoded.substring(Math.max(0, decoded.length - 100)),
+                hasBegin: decoded.includes('-----BEGIN'),
+                hasEnd: decoded.includes('-----END'),
               }, 'Base64 decoded key');
-              privateKey = decoded;
+              
+              // Jeśli dekodowanie dało poprawny PEM, użyj go
+              if (decoded.includes('-----BEGIN PRIVATE KEY-----') && decoded.includes('-----END PRIVATE KEY-----')) {
+                privateKey = decoded;
+                this.logger.info('Successfully decoded base64 key to PEM format');
+              } else {
+                this.logger.warn('Decoded base64 does not contain valid PEM markers, trying other methods...');
+              }
             } catch (decodeError) {
               this.logger.warn({ error: decodeError }, 'Failed to decode base64 key, trying other methods...');
             }
