@@ -43,16 +43,22 @@ export class PushNotificationService {
           // i usuń białe znaki na początku/końcu
           let privateKey = env.FCM_PRIVATE_KEY.trim();
           
-          // Logowanie do debugowania formatu klucza
-          this.logger.debug({
+          // Logowanie do debugowania formatu klucza - BARDZO SZCZEGÓŁOWE
+          this.logger.error({
             originalKeyLength: env.FCM_PRIVATE_KEY.length,
-            originalKeyFirstChars: env.FCM_PRIVATE_KEY.substring(0, 50),
-            originalKeyLastChars: env.FCM_PRIVATE_KEY.substring(Math.max(0, env.FCM_PRIVATE_KEY.length - 50)),
+            originalKeyFirstChars: env.FCM_PRIVATE_KEY.substring(0, 100),
+            originalKeyLastChars: env.FCM_PRIVATE_KEY.substring(Math.max(0, env.FCM_PRIVATE_KEY.length - 100)),
             hasNewlines: env.FCM_PRIVATE_KEY.includes('\n'),
             hasLiteralN: env.FCM_PRIVATE_KEY.includes('\\n'),
             hasColons: env.FCM_PRIVATE_KEY.includes(':'),
+            hasBegin: env.FCM_PRIVATE_KEY.includes('-----BEGIN'),
+            hasEnd: env.FCM_PRIVATE_KEY.includes('-----END'),
             looksLikeBase64: /^[A-Za-z0-9+/=:]+$/.test(env.FCM_PRIVATE_KEY),
-          }, 'FCM_PRIVATE_KEY raw format analysis');
+            firstChar: env.FCM_PRIVATE_KEY[0],
+            lastChar: env.FCM_PRIVATE_KEY[env.FCM_PRIVATE_KEY.length - 1],
+            // Pełny klucz (UWAGA: to może być długie!)
+            fullKey: env.FCM_PRIVATE_KEY,
+          }, 'FCM_PRIVATE_KEY FULL ANALYSIS - DEBUGGING');
           
           // Jeśli klucz wygląda jak base64 z dwukropkami (Railway może tak kodować), spróbuj zdekodować
           if (privateKey.includes(':') && !privateKey.includes('-----BEGIN') && /^[A-Za-z0-9+/=:]+$/.test(privateKey)) {
