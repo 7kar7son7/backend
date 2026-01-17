@@ -50,7 +50,27 @@ export class PushNotificationService {
             originalKeyLastChars: env.FCM_PRIVATE_KEY.substring(Math.max(0, env.FCM_PRIVATE_KEY.length - 50)),
             hasNewlines: env.FCM_PRIVATE_KEY.includes('\n'),
             hasLiteralN: env.FCM_PRIVATE_KEY.includes('\\n'),
+            hasColons: env.FCM_PRIVATE_KEY.includes(':'),
+            looksLikeBase64: /^[A-Za-z0-9+/=:]+$/.test(env.FCM_PRIVATE_KEY),
           }, 'FCM_PRIVATE_KEY raw format analysis');
+          
+          // Jeśli klucz wygląda jak base64 z dwukropkami (Railway może tak kodować), spróbuj zdekodować
+          if (privateKey.includes(':') && !privateKey.includes('-----BEGIN') && /^[A-Za-z0-9+/=:]+$/.test(privateKey)) {
+            this.logger.info('Detected base64-encoded key with colons, attempting to decode...');
+            try {
+              // Połącz części base64 (usunąć dwukropki) i zdekoduj
+              const base64String = privateKey.replace(/:/g, '');
+              const decoded = Buffer.from(base64String, 'base64').toString('utf-8');
+              this.logger.debug({
+                decodedLength: decoded.length,
+                decodedFirstChars: decoded.substring(0, 50),
+                decodedLastChars: decoded.substring(Math.max(0, decoded.length - 50)),
+              }, 'Base64 decoded key');
+              privateKey = decoded;
+            } catch (decodeError) {
+              this.logger.warn({ error: decodeError }, 'Failed to decode base64 key, trying other methods...');
+            }
+          }
           
           // Zamień literalne \n na rzeczywiste znaki nowej linii (obsługa różnych formatów)
           // Railway/Heroku mogą przechowywać z różnymi escapowaniami
