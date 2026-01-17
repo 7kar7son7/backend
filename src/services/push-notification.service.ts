@@ -108,14 +108,35 @@ export class PushNotificationService {
                       privateKey = extractedKey;
                       this.logger.info('Successfully extracted PEM key from decoded JSON');
                     } else {
-                      this.logger.warn('Decoded base64 does not contain valid PEM markers, trying other methods...');
+                      // Może być to base64 w JSON - spróbuj zdekodować jeszcze raz
+                      if (typeof extractedKey === 'string' && /^[A-Za-z0-9+/=]+$/.test(extractedKey)) {
+                        try {
+                          const doubleDecoded = Buffer.from(extractedKey, 'base64').toString('utf-8');
+                          if (doubleDecoded.includes('-----BEGIN PRIVATE KEY-----') && doubleDecoded.includes('-----END PRIVATE KEY-----')) {
+                            privateKey = doubleDecoded;
+                            this.logger.info('Successfully double-decoded base64 key from JSON');
+                          } else {
+                            this.logger.warn('Decoded base64 does not contain valid PEM markers, trying other methods...');
+                          }
+                        } catch (doubleDecodeError) {
+                          this.logger.warn('Failed to double-decode base64, trying other methods...');
+                        }
+                      } else {
+                        this.logger.warn('Decoded base64 does not contain valid PEM markers, trying other methods...');
+                      }
                     }
                   } else {
                     this.logger.warn('Decoded base64 does not contain valid PEM markers, trying other methods...');
                   }
                 } catch (jsonError) {
-                  // Nie jest to JSON, kontynuuj z innymi metodami
-                  this.logger.warn('Decoded base64 does not contain valid PEM markers, trying other methods...');
+                  // Nie jest to JSON - może być to base64-encoded PEM bezpośrednio
+                  // Spróbuj użyć zdekodowanego stringa jako klucza, jeśli wygląda na PEM
+                  if (decoded.trim().startsWith('-----BEGIN') && decoded.trim().includes('-----END')) {
+                    privateKey = decoded;
+                    this.logger.info('Using decoded string as PEM key (looks like PEM without markers)');
+                  } else {
+                    this.logger.warn('Decoded base64 does not contain valid PEM markers, trying other methods...');
+                  }
                 }
               }
             } catch (decodeError) {
