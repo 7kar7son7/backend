@@ -74,23 +74,49 @@ export class PushNotificationService {
               
               const decoded = Buffer.from(paddedBase64, 'base64').toString('utf-8');
               
-              this.logger.debug({
+              this.logger.error({
                 originalLength: privateKey.length,
                 base64Length: base64String.length,
                 paddedLength: paddedBase64.length,
                 decodedLength: decoded.length,
-                decodedFirstChars: decoded.substring(0, 100),
-                decodedLastChars: decoded.substring(Math.max(0, decoded.length - 100)),
+                decodedFirstChars: decoded.substring(0, 200),
+                decodedLastChars: decoded.substring(Math.max(0, decoded.length - 200)),
+                decodedFull: decoded, // Pełny zdekodowany string do debugowania
                 hasBegin: decoded.includes('-----BEGIN'),
                 hasEnd: decoded.includes('-----END'),
-              }, 'Base64 decoded key');
+                isJSON: (() => {
+                  try {
+                    JSON.parse(decoded);
+                    return true;
+                  } catch {
+                    return false;
+                  }
+                })(),
+              }, 'Base64 decoded key - FULL DEBUG');
               
               // Jeśli dekodowanie dało poprawny PEM, użyj go
               if (decoded.includes('-----BEGIN PRIVATE KEY-----') && decoded.includes('-----END PRIVATE KEY-----')) {
                 privateKey = decoded;
                 this.logger.info('Successfully decoded base64 key to PEM format');
               } else {
-                this.logger.warn('Decoded base64 does not contain valid PEM markers, trying other methods...');
+                // Może być to JSON z kluczem wewnątrz - spróbuj sparsować jako JSON
+                try {
+                  const jsonParsed = JSON.parse(decoded);
+                  if (jsonParsed.private_key || jsonParsed.privateKey || jsonParsed.key) {
+                    const extractedKey = jsonParsed.private_key || jsonParsed.privateKey || jsonParsed.key;
+                    if (extractedKey && extractedKey.includes('-----BEGIN PRIVATE KEY-----') && extractedKey.includes('-----END PRIVATE KEY-----')) {
+                      privateKey = extractedKey;
+                      this.logger.info('Successfully extracted PEM key from decoded JSON');
+                    } else {
+                      this.logger.warn('Decoded base64 does not contain valid PEM markers, trying other methods...');
+                    }
+                  } else {
+                    this.logger.warn('Decoded base64 does not contain valid PEM markers, trying other methods...');
+                  }
+                } catch (jsonError) {
+                  // Nie jest to JSON, kontynuuj z innymi metodami
+                  this.logger.warn('Decoded base64 does not contain valid PEM markers, trying other methods...');
+                }
               }
             } catch (decodeError) {
               this.logger.warn({ error: decodeError }, 'Failed to decode base64 key, trying other methods...');
