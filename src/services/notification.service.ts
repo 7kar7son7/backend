@@ -243,7 +243,123 @@ export class NotificationService {
       }
     }
 
-    // 2. Przypomnienie 5 minut przed startem
+    // 2. Przypomnienie 10 minut przed startem
+    // Sprawdź programy startujące za 9-11 minut (szersze okno żeby nie przegapić)
+    const nineMinutesLater = new Date(now.getTime() + 9 * 60 * 1000);
+    const elevenMinutesLater = new Date(now.getTime() + 11 * 60 * 1000);
+
+    const programs10min = await this.prisma.program.findMany({
+      where: {
+        startsAt: {
+          gte: nineMinutesLater,
+          lte: elevenMinutesLater,
+        },
+      },
+      include: {
+        channel: true,
+        programFollows: {
+          where: {
+            type: 'PROGRAM',
+          },
+        },
+      },
+    });
+
+    this.logger.info(
+      { count: programs10min.length, timeWindow: '9-11 min', now: now.toISOString() },
+      'Checking programs for 10min reminder',
+    );
+
+    for (const program of programs10min) {
+      const deviceIds = program.programFollows.map((follow) => follow.deviceId);
+      if (deviceIds.length === 0) {
+        this.logger.info({ programId: program.id, title: program.title }, 'Program has no followers, skipping');
+        continue;
+      }
+
+      const millisecondsUntilStart = program.startsAt.getTime() - now.getTime();
+      const totalSecondsUntilStart = Math.floor(millisecondsUntilStart / 1000);
+      const minutesUntilStart = Math.floor(totalSecondsUntilStart / 60);
+      const secondsUntilStart = totalSecondsUntilStart % 60;
+      
+      this.logger.info(
+        { 
+          programId: program.id, 
+          title: program.title, 
+          startsAt: program.startsAt.toISOString(),
+          minutesUntilStart,
+          secondsUntilStart,
+          totalSecondsUntilStart,
+          deviceIdsCount: deviceIds.length 
+        },
+        'Checking program for 10min reminder',
+      );
+      
+      // Wysyłaj powiadomienie gdy jest między 9 a 11 minutami przed (540-660 sekund)
+      // To pozwoli złapać programy które są dokładnie 10 minut przed, nawet jeśli job uruchomi się o 9:59 lub 10:59
+      if (totalSecondsUntilStart < 540 || totalSecondsUntilStart > 660) {
+        this.logger.info(
+          { programId: program.id, title: program.title, minutesUntilStart, secondsUntilStart, totalSecondsUntilStart },
+          'Program outside 10min window (9:00-11:00), skipping',
+        );
+        continue;
+      }
+      
+      // Próbuj utworzyć rekord PRZED wysłaniem - jeśli już istnieje (P2002), nie wysyłaj
+      try {
+        // Próbuj utworzyć rekord - unique constraint zapobiegnie duplikatom
+        // Jeśli rekord już istnieje, dostaniemy P2002 i nie wyślemy powiadomienia
+        await this.prisma.programNotificationLog.create({
+          data: {
+            programId: program.id,
+            reminderType: 'TEN_MIN',
+          },
+        });
+        
+        // Rekord utworzony - teraz wyślij powiadomienie
+        this.logger.info(
+          { programId: program.id, title: program.title, deviceIdsCount: deviceIds.length, minutesUntilStart },
+          'Sending 10min reminder notification',
+        );
+        await this.pushNotification.send(deviceIds, {
+          title: 'Start za 10 minut',
+          body: `${program.title} | ${program.channel?.name ?? ''}`,
+          data: {
+            type: 'PROGRAM_START_SOON',
+            programId: program.id,
+            channelId: program.channelId,
+            startsAt: program.startsAt.toISOString(),
+            reminderType: '10_MIN',
+          },
+        });
+        this.logger.info(
+          { programId: program.id, title: program.title },
+          '10min reminder notification sent successfully',
+        );
+      } catch (error: any) {
+        // Jeśli unique constraint error (P2002), to znaczy że rekord już istnieje - nie wysyłaj
+        if (error?.code === 'P2002') {
+          this.logger.debug({ programId: program.id }, 'Notification already sent (duplicate prevented)');
+          continue; // Już wysłane przez inny proces, pomiń
+        } else {
+          // Inny błąd (np. tabela nie istnieje) - kontynuuj wysyłanie
+          this.logger.warn({ error, programId: program.id }, 'Failed to create notification log, sending anyway');
+          await this.pushNotification.send(deviceIds, {
+            title: 'Start za 10 minut',
+            body: `${program.title} | ${program.channel?.name ?? ''}`,
+            data: {
+              type: 'PROGRAM_START_SOON',
+              programId: program.id,
+              channelId: program.channelId,
+              startsAt: program.startsAt.toISOString(),
+              reminderType: '10_MIN',
+            },
+          });
+        }
+      }
+    }
+
+    // 3. Przypomnienie 5 minut przed startem
     // Sprawdź programy startujące za 4-6 minut (szersze okno żeby nie przegapić)
     const fourMinutesLater = new Date(now.getTime() + 4 * 60 * 1000);
     const sixMinutesLater = new Date(now.getTime() + 6 * 60 * 1000);
@@ -360,7 +476,7 @@ export class NotificationService {
       }
     }
 
-    // 3. Powiadomienie gdy program się zacznie
+    // 4. Powiadomienie gdy program się zacznie
     // Sprawdź programy które właśnie się zaczęły (0-60 sekund od startu) - okno aby job co minutę nie przegapił
     const sixtySecondsAgo = new Date(now.getTime() - 60 * 1000);
 

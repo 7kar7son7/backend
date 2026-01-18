@@ -200,6 +200,7 @@ enum PointReason {
 
 enum ProgramReminderType {
   FIFTEEN_MIN
+  TEN_MIN
   FIVE_MIN
   STARTED
   EVENT_STARTED
