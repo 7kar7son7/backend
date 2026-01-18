@@ -102,6 +102,65 @@ export class NotificationService {
     );
   }
 
+  async sendEventConfirmationNotification(
+    deviceIds: string[],
+    payload: ReminderPayload,
+    confirmedByDeviceId: string,
+  ) {
+    this.logger.info(
+      {
+        eventId: payload.eventId,
+        programId: payload.programId,
+        deviceIdsCount: deviceIds.length,
+        confirmedByDeviceId,
+      },
+      'sendEventConfirmationNotification called',
+    );
+
+    // Upewnij się, że mamy czytelną treść powiadomienia
+    const programTitle = payload.programTitle || 'Program';
+    const notificationBody = programTitle.length > 50 
+      ? `${programTitle.substring(0, 47)}... - ktoś potwierdził koniec reklam!`
+      : `${programTitle} - ktoś potwierdził koniec reklam!`;
+    
+    const message: PushMessage = {
+      title: 'Potwierdzenie reklam',
+      body: notificationBody,
+      data: {
+        type: 'EVENT_CONFIRMED',
+        eventId: payload.eventId,
+        programId: payload.programId,
+        channelId: payload.channelId,
+        startsAt: payload.startsAt,
+      },
+    };
+    
+    // Dodaj image tylko jeśli jest dostępne (nie przekazuj undefined)
+    if (payload.channelLogoUrl) {
+      message.image = payload.channelLogoUrl;
+    }
+    
+    this.logger.info(
+      {
+        eventId: payload.eventId,
+        deviceIdsCount: deviceIds.length,
+        messageTitle: message.title,
+        messageBody: message.body,
+      },
+      'Calling pushNotification.send for event confirmation',
+    );
+    
+    await this.pushNotification.send(deviceIds, message);
+    
+    this.logger.info(
+      {
+        eventId: payload.eventId,
+        deviceIdsCount: deviceIds.length,
+      },
+      'pushNotification.send completed for event confirmation',
+    );
+  }
+
   async sendDailyReminder() {
     const devices = await this.prisma.deviceToken.findMany();
     if (devices.length === 0) {

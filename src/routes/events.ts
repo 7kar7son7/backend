@@ -219,6 +219,45 @@ export default async function eventsRoutes(app: FastifyInstance) {
         body.reminderUsed,
       );
 
+      // Wyślij powiadomienia do innych followers, że ktoś potwierdził event
+      // (oprócz tego, który właśnie potwierdził)
+      try {
+        const recipients = await eventService.getProgramFollowersForNotification(
+          params.eventId,
+          eventBefore.programId,
+        );
+        
+        // Wyklucz deviceId, który właśnie potwierdził
+        const otherRecipients = recipients.filter(id => id !== deviceId);
+        
+        if (otherRecipients.length > 0) {
+          const programTitle = eventBefore.program.title || 'Program';
+          const channelName = eventBefore.program.channel?.name || '';
+          
+          const payload = {
+            eventId: params.eventId,
+            programId: eventBefore.programId,
+            channelId: eventBefore.program.channelId,
+            programTitle: channelName ? `${channelName}: ${programTitle}` : programTitle,
+            startsAt: eventBefore.program.startsAt.toISOString(),
+            channelLogoUrl: eventBefore.program.channel?.logoUrl ?? null,
+          };
+
+          await notificationService.sendEventConfirmationNotification(
+            otherRecipients,
+            payload,
+            deviceId,
+          );
+          request.log.info(
+            { eventId: params.eventId, recipientsCount: otherRecipients.length },
+            'Sent event confirmation notifications to other followers',
+          );
+        }
+      } catch (error) {
+        // Nie przerywaj procesu jeśli powiadomienia się nie udały
+        request.log.warn(error, 'Failed to send event confirmation notifications');
+      }
+
       // Sprawdź czy event osiągnął próg TERAZ (po dodaniu tego potwierdzenia)
       // i czy wcześniej NIE był zwalidowany (żeby nie wysyłać powiadomień wielokrotnie)
       const confirmationsCount = await eventService.getEventConfirmationsCount(params.eventId);
