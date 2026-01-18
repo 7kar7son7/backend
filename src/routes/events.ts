@@ -97,6 +97,22 @@ export default async function eventsRoutes(app: FastifyInstance) {
       const followersWithTokens = await eventService.getProgramFollowersWithTokens(body.programId);
       const recipients = followersWithTokens.filter((id) => id !== deviceId);
       
+      // Szczegółowe logowanie dla debugowania
+      request.log.info(
+        {
+          eventId: event.id,
+          programId: body.programId,
+          initiatorDeviceId: deviceId,
+          totalFollowers: followerDeviceIds.length,
+          followersWithTokens: followersWithTokens.length,
+          recipientsCount: recipients.length,
+          allFollowers: followerDeviceIds,
+          followersWithTokensList: followersWithTokens,
+          recipientsList: recipients,
+        },
+        'Event creation - push notification recipients analysis',
+      );
+      
       if (recipients.length > 0) {
         const programTitle = event.program.title || 'Program';
         const channelName = event.program.channel?.name || '';
@@ -112,13 +128,20 @@ export default async function eventsRoutes(app: FastifyInstance) {
 
         await notificationService.sendEventStartedNotification(recipients, payload);
         request.log.info(
-          { eventId: event.id, recipientsCount: recipients.length, totalFollowers: followerDeviceIds.length },
+          { eventId: event.id, recipientsCount: recipients.length, recipients: recipients },
           'Sent event notifications immediately after event creation',
         );
       } else {
-        request.log.info(
-          { eventId: event.id, totalFollowers: followerDeviceIds.length },
-          'No recipients with push tokens found for event notification',
+        request.log.warn(
+          {
+            eventId: event.id,
+            totalFollowers: followerDeviceIds.length,
+            followersWithTokens: followersWithTokens.length,
+            initiatorDeviceId: deviceId,
+            allFollowers: followerDeviceIds,
+            followersWithTokensList: followersWithTokens,
+          },
+          'No recipients with push tokens found for event notification - push will NOT be sent',
         );
       }
 
@@ -195,6 +218,45 @@ export default async function eventsRoutes(app: FastifyInstance) {
         body.choice,
         body.reminderUsed,
       );
+
+      // Wyślij powiadomienia do innych followers, że ktoś potwierdził event
+      // (oprócz tego, który właśnie potwierdził)
+      try {
+        const recipients = await eventService.getProgramFollowersForNotification(
+          params.eventId,
+          eventBefore.programId,
+        );
+        
+        // Wyklucz deviceId, który właśnie potwierdził
+        const otherRecipients = recipients.filter(id => id !== deviceId);
+        
+        if (otherRecipients.length > 0) {
+          const programTitle = eventBefore.program.title || 'Program';
+          const channelName = eventBefore.program.channel?.name || '';
+          
+          const payload = {
+            eventId: params.eventId,
+            programId: eventBefore.programId,
+            channelId: eventBefore.program.channelId,
+            programTitle: channelName ? `${channelName}: ${programTitle}` : programTitle,
+            startsAt: eventBefore.program.startsAt.toISOString(),
+            channelLogoUrl: eventBefore.program.channel?.logoUrl ?? null,
+          };
+
+          await notificationService.sendEventConfirmationNotification(
+            otherRecipients,
+            payload,
+            deviceId,
+          );
+          request.log.info(
+            { eventId: params.eventId, recipientsCount: otherRecipients.length },
+            'Sent event confirmation notifications to other followers',
+          );
+        }
+      } catch (error) {
+        // Nie przerywaj procesu jeśli powiadomienia się nie udały
+        request.log.warn(error, 'Failed to send event confirmation notifications');
+      }
 
       // Sprawdź czy event osiągnął próg TERAZ (po dodaniu tego potwierdzenia)
       // i czy wcześniej NIE był zwalidowany (żeby nie wysyłać powiadomień wielokrotnie)
