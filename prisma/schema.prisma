@@ -72,6 +72,8 @@ model Event {
   status             EventStatus         @default(PENDING)
   initiatedAt        DateTime            @default(now()) @db.Timestamptz(6)
   validatedAt        DateTime?           @db.Timestamptz(6)
+  /** Ustawiane przy pierwszym wysłaniu push „KONIEC REKLAM” – zapobiega duplikatom przy retry/race. */
+  initialPushSentAt  DateTime?           @db.Timestamptz(6)
   expiresAt          DateTime?           @db.Timestamptz(6)
   followerCountLimit Int?
   createdAt          DateTime            @default(now())

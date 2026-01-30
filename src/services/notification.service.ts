@@ -39,22 +39,22 @@ export class NotificationService {
       'sendEventStartedNotification called',
     );
 
-    // Sprawdź czy powiadomienie dla tego eventu już zostało wysłane
-    // Używamy flagi validatedAt w Event jako wskaźnika że powiadomienia zostały wysłane
-    const event = await this.prisma.event.findUnique({
-      where: { id: payload.eventId },
-      select: { validatedAt: true, status: true },
+    // Atomowo „rezerwuj” prawo do wysłania: ustaw initialPushSentAt tylko gdy jest null.
+    // Dzięki temu retry / drugi request (create + threshold) nie wyślą duplikatu.
+    const updated = await this.prisma.event.updateMany({
+      where: {
+        id: payload.eventId,
+        initialPushSentAt: null,
+        validatedAt: null,
+      },
+      data: { initialPushSentAt: new Date() },
     });
 
-    if (!event) {
-      this.logger.warn({ eventId: payload.eventId }, 'Event not found when sending notification');
-      return;
-    }
-
-    // Jeśli event ma validatedAt, to powiadomienia już zostały wysłane
-    // (validatedAt jest ustawiane tylko raz, gdy event osiąga próg)
-    if (event.validatedAt) {
-      this.logger.debug({ eventId: payload.eventId }, 'Event notification already sent (duplicate prevented by validatedAt)');
+    if (updated.count === 0) {
+      this.logger.debug(
+        { eventId: payload.eventId },
+        'Event notification already sent or event validated (duplicate prevented by initialPushSentAt)',
+      );
       return;
     }
 
@@ -92,13 +92,13 @@ export class NotificationService {
     );
     
     await this.pushNotification.send(deviceIds, message);
-    
+
     this.logger.info(
       {
         eventId: payload.eventId,
         deviceIdsCount: deviceIds.length,
       },
-      'pushNotification.send completed',
+      'pushNotification.send completed (initialPushSentAt already set)',
     );
   }
 
