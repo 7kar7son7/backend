@@ -6,7 +6,8 @@ import { NotificationService } from '../services/notification.service';
 import { EventService } from '../services/event.service';
 
 const REMINDER_SCHEDULE = '*/2 * * * *';
-const MAX_REMINDERS_PER_EVENT = 2;
+/** 0 = wyłączone: tylko jeden push "KONIEC REKLAM" przy zgłoszeniu, bez "Czy wydarzenie nadal trwa?" */
+const MAX_REMINDERS_PER_EVENT = 0;
 const MAX_REMINDERS_PER_DAY = 8;
 const NIGHT_START = 22;
 const NIGHT_END = 7;
