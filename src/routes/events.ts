@@ -146,7 +146,9 @@ export default async function eventsRoutes(app: FastifyInstance) {
       }
 
       const formattedEvent = await finalizeEventResponse(event, followerDeviceIds, deviceId);
-      return reply.code(201).send({ data: formattedEvent });
+      return reply.code(201).send({
+        data: { ...formattedEvent, recipientsCount: recipients.length },
+      });
     } catch (error) {
       if (error instanceof Error && error.message === 'Program not found') {
         return reply.notFound(error.message);

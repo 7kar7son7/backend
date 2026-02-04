@@ -8,7 +8,7 @@ export function startDailyReminderJob(app: FastifyInstance): ScheduledTask | nul
   // Codzienne przypomnienie powinno działać niezależnie od EPG_AUTO_IMPORT_ENABLED
   // Używamy osobnej zmiennej lub domyślnie włączamy
   const enabled = env.DAILY_REMINDER_ENABLED ?? true; // Domyślnie włączone
-  const schedule = env.DAILY_REMINDER_SCHEDULE ?? '0 11 * * *';
+  const schedule = env.DAILY_REMINDER_SCHEDULE ?? '0 18 * * *'; // 18:00 przed prime time
   const timezone = env.EPG_AUTO_IMPORT_TIMEZONE ?? 'Europe/Warsaw';
 
   if (!enabled) {

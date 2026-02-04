@@ -181,7 +181,11 @@ export class NotificationService {
 
   async sendProgramStartingSoonReminder() {
     const now = new Date();
-    
+    // Tylko 5 min – mniej pushy (15 i 10 wyłączone)
+    const SEND_15_MIN = false;
+    const SEND_10_MIN = false;
+
+    if (SEND_15_MIN) {
     // 1. Przypomnienie 15 minut przed startem
     // Sprawdź programy startujące za 14-16 minut (szersze okno żeby nie przegapić)
     const fourteenMinutesLater = new Date(now.getTime() + 14 * 60 * 1000);
@@ -301,7 +305,9 @@ export class NotificationService {
         }
       }
     }
+    }
 
+    if (SEND_10_MIN) {
     // 2. Przypomnienie 10 minut przed startem
     // Sprawdź programy startujące za 9-11 minut (szersze okno żeby nie przegapić)
     const nineMinutesLater = new Date(now.getTime() + 9 * 60 * 1000);
@@ -417,8 +423,9 @@ export class NotificationService {
         }
       }
     }
+    }
 
-    // 3. Przypomnienie 5 minut przed startem
+    // 3. Przypomnienie 5 minut przed startem (włączone)
     // Sprawdź programy startujące za 4-6 minut (szersze okno żeby nie przegapić)
     const fourMinutesLater = new Date(now.getTime() + 4 * 60 * 1000);
     const sixMinutesLater = new Date(now.getTime() + 6 * 60 * 1000);
