@@ -1,9 +1,14 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient, NotificationSensitivity } from '@prisma/client';
 
 export class DeviceTokenService {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async registerToken(deviceId: string, token: string, platform?: string) {
+  async registerToken(
+    deviceId: string,
+    token: string,
+    platform?: string,
+    notificationSensitivity?: NotificationSensitivity,
+  ) {
     const createData: Prisma.DeviceTokenCreateInput = {
       deviceId,
       token,
@@ -12,6 +17,10 @@ export class DeviceTokenService {
 
     if (platform !== undefined) {
       createData.platform = platform;
+    }
+
+    if (notificationSensitivity !== undefined) {
+      createData.notificationSensitivity = notificationSensitivity;
     }
 
     const updateData: Prisma.DeviceTokenUpdateInput = {
@@ -23,11 +32,34 @@ export class DeviceTokenService {
       updateData.platform = { set: platform };
     }
 
+    if (notificationSensitivity !== undefined) {
+      updateData.notificationSensitivity = { set: notificationSensitivity };
+    }
+
     return this.prisma.deviceToken.upsert({
       where: { token },
       create: createData,
       update: updateData,
     });
+  }
+
+  async updateNotificationSensitivity(
+    deviceId: string,
+    notificationSensitivity: NotificationSensitivity,
+  ) {
+    return this.prisma.deviceToken.updateMany({
+      where: { deviceId },
+      data: { notificationSensitivity },
+    });
+  }
+
+  async getNotificationSensitivity(deviceId: string): Promise<NotificationSensitivity | null> {
+    const deviceToken = await this.prisma.deviceToken.findFirst({
+      where: { deviceId },
+      select: { notificationSensitivity: true },
+    });
+
+    return deviceToken?.notificationSensitivity ?? null;
   }
 
   async unregisterToken(token: string) {
