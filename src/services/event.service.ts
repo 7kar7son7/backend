@@ -25,7 +25,12 @@ export class EventService {
       throw new Error('Program not found');
     }
 
-    const expiresAt = program.endsAt ?? new Date(program.startsAt.getTime() + 60 * 60 * 1000);
+    // Czas blokady kolejnego zgłoszenia zależy od długości programu:
+    // seriale ~30 min → 10 min, dłuższe filmy → 20 min (reklamy mogą wracać w trakcie)
+    const programDurationMinutes =
+      (program.endsAt.getTime() - program.startsAt.getTime()) / (60 * 1000);
+    const eventExpiryMinutes = programDurationMinutes <= 35 ? 10 : 20;
+    const expiresAt = new Date(Date.now() + eventExpiryMinutes * 60 * 1000);
 
     const event = await this.prisma.event.create({
       data: {
