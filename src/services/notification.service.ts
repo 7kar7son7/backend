@@ -364,7 +364,6 @@ export class NotificationService {
         }
       }
     }
-    }
 
     // 2. Przypomnienie 10 minut przed startem (dla HIGH i MEDIUM sensitivity)
     // Sprawdź programy startujące za 9-11 minut (szersze okno żeby nie przegapić)
@@ -490,7 +489,6 @@ export class NotificationService {
           });
         }
       }
-    }
     }
 
     // 3. Przypomnienie 5 minut przed startem (wszyscy użytkownicy)
