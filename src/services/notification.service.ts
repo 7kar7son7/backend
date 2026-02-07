@@ -39,22 +39,22 @@ export class NotificationService {
       'sendEventStartedNotification called',
     );
 
-    // Sprawdź czy powiadomienie dla tego eventu już zostało wysłane
-    // Używamy flagi validatedAt w Event jako wskaźnika że powiadomienia zostały wysłane
-    const event = await this.prisma.event.findUnique({
-      where: { id: payload.eventId },
-      select: { validatedAt: true, status: true },
+    // Atomowo „rezerwuj” prawo do wysłania: ustaw initialPushSentAt tylko gdy jest null.
+    // Dzięki temu retry / drugi request (create + threshold) nie wyślą duplikatu.
+    const updated = await this.prisma.event.updateMany({
+      where: {
+        id: payload.eventId,
+        initialPushSentAt: null,
+        validatedAt: null,
+      },
+      data: { initialPushSentAt: new Date() },
     });
 
-    if (!event) {
-      this.logger.warn({ eventId: payload.eventId }, 'Event not found when sending notification');
-      return;
-    }
-
-    // Jeśli event ma validatedAt, to powiadomienia już zostały wysłane
-    // (validatedAt jest ustawiane tylko raz, gdy event osiąga próg)
-    if (event.validatedAt) {
-      this.logger.debug({ eventId: payload.eventId }, 'Event notification already sent (duplicate prevented by validatedAt)');
+    if (updated.count === 0) {
+      this.logger.debug(
+        { eventId: payload.eventId },
+        'Event notification already sent or event validated (duplicate prevented by initialPushSentAt)',
+      );
       return;
     }
 
@@ -92,13 +92,13 @@ export class NotificationService {
     );
     
     await this.pushNotification.send(deviceIds, message);
-    
+
     this.logger.info(
       {
         eventId: payload.eventId,
         deviceIdsCount: deviceIds.length,
       },
-      'pushNotification.send completed',
+      'pushNotification.send completed (initialPushSentAt already set)',
     );
   }
 
@@ -170,7 +170,7 @@ export class NotificationService {
     await this.pushNotification.send(
       devices.map((device) => device.deviceId),
       {
-        title: 'BackOn.tv przypomina o dzisiejszym programie',
+        title: 'Programy na dziś',
         body: 'Sprawdź, co dziś w TV i dodaj programy do śledzenia.',
         data: {
           type: 'DAILY_REMINDER',
@@ -181,7 +181,11 @@ export class NotificationService {
 
   async sendProgramStartingSoonReminder() {
     const now = new Date();
-    
+    // Tylko 5 min – mniej pushy (15 i 10 wyłączone)
+    const SEND_15_MIN = false;
+    const SEND_10_MIN = false;
+
+    if (SEND_15_MIN) {
     // 1. Przypomnienie 15 minut przed startem
     // Sprawdź programy startujące za 14-16 minut (szersze okno żeby nie przegapić)
     const fourteenMinutesLater = new Date(now.getTime() + 14 * 60 * 1000);
@@ -301,7 +305,9 @@ export class NotificationService {
         }
       }
     }
+    }
 
+    if (SEND_10_MIN) {
     // 2. Przypomnienie 10 minut przed startem
     // Sprawdź programy startujące za 9-11 minut (szersze okno żeby nie przegapić)
     const nineMinutesLater = new Date(now.getTime() + 9 * 60 * 1000);
@@ -417,8 +423,9 @@ export class NotificationService {
         }
       }
     }
+    }
 
-    // 3. Przypomnienie 5 minut przed startem
+    // 3. Przypomnienie 5 minut przed startem (włączone)
     // Sprawdź programy startujące za 4-6 minut (szersze okno żeby nie przegapić)
     const fourMinutesLater = new Date(now.getTime() + 4 * 60 * 1000);
     const sixMinutesLater = new Date(now.getTime() + 6 * 60 * 1000);
