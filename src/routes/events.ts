@@ -224,13 +224,14 @@ export default async function eventsRoutes(app: FastifyInstance) {
       // Wyślij powiadomienia do innych followers, że ktoś potwierdził event
       // (oprócz tego, który właśnie potwierdził)
       try {
-        const recipients = await eventService.getProgramFollowersForNotification(
-          params.eventId,
+        // Pobierz wszystkich followers programu z tokenami (niezależnie od potwierdzenia)
+        // bo powiadomienie o potwierdzeniu przez kogoś innego powinno trafić do wszystkich
+        const allRecipients = await eventService.getProgramFollowersWithTokens(
           eventBefore.programId,
         );
         
         // Wyklucz deviceId, który właśnie potwierdził
-        const otherRecipients = recipients.filter(id => id !== deviceId);
+        const otherRecipients = allRecipients.filter(id => id !== deviceId);
         
         if (otherRecipients.length > 0) {
           const programTitle = eventBefore.program.title || 'Program';
