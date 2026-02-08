@@ -222,7 +222,7 @@ export default async function eventsRoutes(app: FastifyInstance) {
       );
 
       // Wyślij powiadomienia do innych followers, że ktoś potwierdził event
-      // (oprócz tego, który właśnie potwierdził)
+      // (oprócz tego, który właśnie potwierdził i initiatora eventu)
       try {
         // Pobierz wszystkich followers programu z tokenami (niezależnie od potwierdzenia)
         // bo powiadomienie o potwierdzeniu przez kogoś innego powinno trafić do wszystkich
@@ -230,8 +230,11 @@ export default async function eventsRoutes(app: FastifyInstance) {
           eventBefore.programId,
         );
         
-        // Wyklucz deviceId, który właśnie potwierdził
-        const otherRecipients = allRecipients.filter(id => id !== deviceId);
+        // Wyklucz deviceId, który właśnie potwierdził oraz initiatora eventu
+        // (initiator nie powinien otrzymać powiadomienia o potwierdzeniu własnego eventu)
+        const otherRecipients = allRecipients.filter(
+          id => id !== deviceId && id !== eventBefore.initiatorDeviceId
+        );
         
         if (otherRecipients.length > 0) {
           const programTitle = eventBefore.program.title || 'Program';
