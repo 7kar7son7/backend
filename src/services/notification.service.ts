@@ -164,18 +164,27 @@ export class NotificationService {
   async sendDailyReminder() {
     const devices = await this.prisma.deviceToken.findMany();
     if (devices.length === 0) {
+      this.logger.info('No devices found for daily reminder');
       return;
     }
 
-    await this.pushNotification.send(
-      devices.map((device) => device.deviceId),
-      {
-        title: 'Programy na dziś',
-        body: 'Sprawdź, co dziś w TV i dodaj programy do śledzenia.',
-        data: {
-          type: 'DAILY_REMINDER',
-        },
+    const deviceIds = devices.map((device) => device.deviceId);
+    this.logger.info(
+      { deviceCount: deviceIds.length, deviceIds },
+      'Sending daily reminder to devices',
+    );
+
+    await this.pushNotification.send(deviceIds, {
+      title: 'Programy na dziś',
+      body: 'Sprawdź, co dziś w TV i dodaj programy do śledzenia.',
+      data: {
+        type: 'DAILY_REMINDER',
       },
+    });
+
+    this.logger.info(
+      { deviceCount: deviceIds.length, sentAt: new Date().toISOString() },
+      'Daily reminder push notifications sent',
     );
   }
 
