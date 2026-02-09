@@ -145,13 +145,14 @@ model PointEntry {
 }
 
 model DeviceToken {
-  id         String    @id @default(uuid()) @db.Uuid
-  deviceId   String
-  token      String    @unique
-  platform   String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  lastUsedAt DateTime? @db.Timestamptz(6)
+  id                   String                  @id @default(uuid()) @db.Uuid
+  deviceId             String
+  token                String                  @unique
+  platform             String?
+  notificationSensitivity NotificationSensitivity? @default(MEDIUM)
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  lastUsedAt           DateTime?               @db.Timestamptz(6)
 
   @@index([deviceId])
   @@map("device_tokens")
@@ -206,4 +207,10 @@ enum ProgramReminderType {
   FIVE_MIN
   STARTED
   EVENT_STARTED
+}
+
+enum NotificationSensitivity {
+  LOW
+  MEDIUM
+  HIGH
 }

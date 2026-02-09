@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, NotificationSensitivity } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 
 import { env } from '../config/env';
@@ -179,14 +179,63 @@ export class NotificationService {
     );
   }
 
+  /**
+   * Filtruje deviceIds zgodnie z ustawieniami notificationSensitivity
+   * @param deviceIds Lista wszystkich deviceIds
+   * @param reminderMinutes Typ powiadomienia (15, 10, lub 5 minut)
+   * @returns Lista deviceIds, które powinny otrzymać powiadomienie
+   */
+  private async filterDevicesBySensitivity(
+    deviceIds: string[],
+    reminderMinutes: 15 | 10 | 5,
+  ): Promise<string[]> {
+    if (deviceIds.length === 0) {
+      return [];
+    }
+
+    // Pobierz ustawienia dla wszystkich urządzeń
+    const deviceTokens = await this.prisma.deviceToken.findMany({
+      where: {
+        deviceId: { in: deviceIds },
+      },
+      select: {
+        deviceId: true,
+        notificationSensitivity: true,
+      },
+    });
+
+    // Mapuj deviceId -> sensitivity
+    const sensitivityMap = new Map<string, NotificationSensitivity | null>();
+    for (const token of deviceTokens) {
+      sensitivityMap.set(token.deviceId, token.notificationSensitivity);
+    }
+
+    // Filtruj zgodnie z ustawieniami:
+    // HIGH (3 powiadomienia): 15, 10, 5 min
+    // MEDIUM (2 powiadomienia): 10, 5 min (domyślnie)
+    // LOW (1 powiadomienie): 5 min
+    return deviceIds.filter((deviceId) => {
+      const sensitivity = sensitivityMap.get(deviceId) ?? NotificationSensitivity.MEDIUM;
+
+      switch (reminderMinutes) {
+        case 15:
+          return sensitivity === NotificationSensitivity.HIGH;
+        case 10:
+          return (
+            sensitivity === NotificationSensitivity.HIGH || sensitivity === NotificationSensitivity.MEDIUM
+          );
+        case 5:
+          return true; // Wszyscy otrzymują powiadomienie 5 min przed
+        default:
+          return false;
+      }
+    });
+  }
+
   async sendProgramStartingSoonReminder() {
     const now = new Date();
-    // Tylko 5 min – mniej pushy (15 i 10 wyłączone)
-    const SEND_15_MIN = false;
-    const SEND_10_MIN = false;
 
-    if (SEND_15_MIN) {
-    // 1. Przypomnienie 15 minut przed startem
+    // 1. Przypomnienie 15 minut przed startem (tylko dla HIGH sensitivity)
     // Sprawdź programy startujące za 14-16 minut (szersze okno żeby nie przegapić)
     const fourteenMinutesLater = new Date(now.getTime() + 14 * 60 * 1000);
     const sixteenMinutesLater = new Date(now.getTime() + 16 * 60 * 1000);
@@ -214,9 +263,19 @@ export class NotificationService {
     );
 
     for (const program of programs15min) {
-      const deviceIds = program.programFollows.map((follow) => follow.deviceId);
-      if (deviceIds.length === 0) {
+      const allDeviceIds = program.programFollows.map((follow) => follow.deviceId);
+      if (allDeviceIds.length === 0) {
         this.logger.info({ programId: program.id, title: program.title }, 'Program has no followers, skipping');
+        continue;
+      }
+
+      // Filtruj deviceIds - tylko HIGH sensitivity otrzyma powiadomienie 15 min
+      const deviceIds = await this.filterDevicesBySensitivity(allDeviceIds, 15);
+      if (deviceIds.length === 0) {
+        this.logger.debug(
+          { programId: program.id, title: program.title, allDeviceIdsCount: allDeviceIds.length },
+          'No devices with HIGH sensitivity for 15min reminder, skipping',
+        );
         continue;
       }
 
@@ -307,8 +366,7 @@ export class NotificationService {
     }
     }
 
-    if (SEND_10_MIN) {
-    // 2. Przypomnienie 10 minut przed startem
+    // 2. Przypomnienie 10 minut przed startem (dla HIGH i MEDIUM sensitivity)
     // Sprawdź programy startujące za 9-11 minut (szersze okno żeby nie przegapić)
     const nineMinutesLater = new Date(now.getTime() + 9 * 60 * 1000);
     const elevenMinutesLater = new Date(now.getTime() + 11 * 60 * 1000);
@@ -336,9 +394,19 @@ export class NotificationService {
     );
 
     for (const program of programs10min) {
-      const deviceIds = program.programFollows.map((follow) => follow.deviceId);
-      if (deviceIds.length === 0) {
+      const allDeviceIds = program.programFollows.map((follow) => follow.deviceId);
+      if (allDeviceIds.length === 0) {
         this.logger.info({ programId: program.id, title: program.title }, 'Program has no followers, skipping');
+        continue;
+      }
+
+      // Filtruj deviceIds - HIGH i MEDIUM sensitivity otrzyma powiadomienie 10 min
+      const deviceIds = await this.filterDevicesBySensitivity(allDeviceIds, 10);
+      if (deviceIds.length === 0) {
+        this.logger.debug(
+          { programId: program.id, title: program.title, allDeviceIdsCount: allDeviceIds.length },
+          'No devices with HIGH or MEDIUM sensitivity for 10min reminder, skipping',
+        );
         continue;
       }
 
@@ -425,7 +493,7 @@ export class NotificationService {
     }
     }
 
-    // 3. Przypomnienie 5 minut przed startem (włączone)
+    // 3. Przypomnienie 5 minut przed startem (wszyscy użytkownicy)
     // Sprawdź programy startujące za 4-6 minut (szersze okno żeby nie przegapić)
     const fourMinutesLater = new Date(now.getTime() + 4 * 60 * 1000);
     const sixMinutesLater = new Date(now.getTime() + 6 * 60 * 1000);
@@ -453,9 +521,20 @@ export class NotificationService {
     );
 
     for (const program of programs5min) {
-      const deviceIds = program.programFollows.map((follow) => follow.deviceId);
-      if (deviceIds.length === 0) {
+      const allDeviceIds = program.programFollows.map((follow) => follow.deviceId);
+      if (allDeviceIds.length === 0) {
         this.logger.info({ programId: program.id, title: program.title }, 'Program has no followers, skipping');
+        continue;
+      }
+
+      // Filtruj deviceIds - wszyscy otrzymują powiadomienie 5 min (ale sprawdzamy ustawienia dla spójności)
+      const deviceIds = await this.filterDevicesBySensitivity(allDeviceIds, 5);
+      if (deviceIds.length === 0) {
+        // To nie powinno się zdarzyć, ale na wszelki wypadek
+        this.logger.warn(
+          { programId: program.id, title: program.title, allDeviceIdsCount: allDeviceIds.length },
+          'No devices for 5min reminder (unexpected)',
+        );
         continue;
       }
 
