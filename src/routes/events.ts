@@ -221,22 +221,35 @@ export default async function eventsRoutes(app: FastifyInstance) {
         body.reminderUsed,
       );
 
-      // Wyślij powiadomienia do innych followers, że ktoś potwierdził event
-      // (oprócz tego, który właśnie potwierdził i initiatora eventu)
+      // Wyślij powiadomienia "Potwierdzenie reklam" TYLKO do osób które JUŻ potwierdziły event
+      // (żeby wiedziały że ktoś inny też potwierdził)
+      // Osoby które jeszcze nie potwierdziły powinny dostać tylko "KONIEC REKLAM" (EVENT_STARTED)
       try {
-        // Pobierz wszystkich followers programu z tokenami (niezależnie od potwierdzenia)
-        // bo powiadomienie o potwierdzeniu przez kogoś innego powinno trafić do wszystkich
-        const allRecipients = await eventService.getProgramFollowersWithTokens(
-          eventBefore.programId,
-        );
+        // Pobierz tylko osoby które JUŻ potwierdziły ten event (oprócz tego który właśnie potwierdził i initiatora)
+        const confirmedDeviceIds = eventBefore.confirmations
+          .map(conf => conf.deviceId)
+          .filter(id => id !== deviceId && id !== eventBefore.initiatorDeviceId);
         
-        // Wyklucz deviceId, który właśnie potwierdził oraz initiatora eventu
-        // (initiator nie powinien otrzymać powiadomienia o potwierdzeniu własnego eventu)
-        const otherRecipients = allRecipients.filter(
-          id => id !== deviceId && id !== eventBefore.initiatorDeviceId
-        );
+        if (confirmedDeviceIds.length === 0) {
+          request.log.debug(
+            { eventId: params.eventId },
+            'No other confirmed users to notify about confirmation',
+          );
+        } else {
+          // Sprawdź które z tych deviceIds mają tokeny push
+          const tokens = await app.prisma.deviceToken.findMany({
+            where: {
+              deviceId: { in: confirmedDeviceIds },
+            },
+            select: {
+              deviceId: true,
+            },
+            distinct: ['deviceId'],
+          });
+          
+          const recipientsWithTokens = tokens.map(t => t.deviceId);
         
-        if (otherRecipients.length > 0) {
+        if (recipientsWithTokens.length > 0) {
           const programTitle = eventBefore.program.title || 'Program';
           const channelName = eventBefore.program.channel?.name || '';
           
@@ -250,14 +263,15 @@ export default async function eventsRoutes(app: FastifyInstance) {
           };
 
           await notificationService.sendEventConfirmationNotification(
-            otherRecipients,
+            recipientsWithTokens,
             payload,
             deviceId,
           );
           request.log.info(
-            { eventId: params.eventId, recipientsCount: otherRecipients.length },
-            'Sent event confirmation notifications to other followers',
+            { eventId: params.eventId, recipientsCount: recipientsWithTokens.length },
+            'Sent event confirmation notifications to already confirmed users',
           );
+        }
         }
       } catch (error) {
         // Nie przerywaj procesu jeśli powiadomienia się nie udały
