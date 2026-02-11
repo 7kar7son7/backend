@@ -162,6 +162,15 @@ export class NotificationService {
   }
 
   async sendDailyReminder() {
+    const startTime = new Date();
+    this.logger.info(
+      { 
+        startTime: startTime.toISOString(),
+        startTimeLocal: startTime.toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' }),
+      },
+      'sendDailyReminder started',
+    );
+
     const devices = await this.prisma.deviceToken.findMany();
     if (devices.length === 0) {
       this.logger.info('No devices found for daily reminder');
@@ -174,6 +183,7 @@ export class NotificationService {
       'Sending daily reminder to devices',
     );
 
+    const beforePush = new Date();
     await this.pushNotification.send(deviceIds, {
       title: 'Programy na dziś',
       body: 'Sprawdź, co dziś w TV i dodaj programy do śledzenia.',
@@ -181,9 +191,16 @@ export class NotificationService {
         type: 'DAILY_REMINDER',
       },
     });
+    const afterPush = new Date();
 
     this.logger.info(
-      { deviceCount: deviceIds.length, sentAt: new Date().toISOString() },
+      { 
+        deviceCount: deviceIds.length, 
+        sentAt: afterPush.toISOString(),
+        sentAtLocal: afterPush.toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' }),
+        pushDurationMs: afterPush.getTime() - beforePush.getTime(),
+        totalDurationMs: afterPush.getTime() - startTime.getTime(),
+      },
       'Daily reminder push notifications sent',
     );
   }

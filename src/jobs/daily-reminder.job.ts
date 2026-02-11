@@ -21,15 +21,30 @@ export function startDailyReminderJob(app: FastifyInstance): ScheduledTask | nul
   const task = cron.schedule(
     schedule,
     async () => {
-      const now = new Date();
+      const triggerTime = new Date();
+      const triggerTimeLocal = new Date(triggerTime.toLocaleString('en-US', { timeZone: timezone }));
       app.log.info(
-        { schedule, timezone, currentTime: now.toISOString() },
+        { 
+          schedule, 
+          timezone, 
+          triggerTimeUTC: triggerTime.toISOString(),
+          triggerTimeLocal: triggerTimeLocal.toISOString(),
+          triggerTimeLocalString: triggerTime.toLocaleString('pl-PL', { timeZone: timezone }),
+        },
         'Daily reminder job triggered',
       );
       try {
+        const beforeSend = new Date();
         await notificationService.sendDailyReminder();
+        const afterSend = new Date();
+        const sendDuration = afterSend.getTime() - beforeSend.getTime();
         app.log.info(
-          { sentAt: new Date().toISOString() },
+          { 
+            sentAt: afterSend.toISOString(),
+            sentAtLocal: afterSend.toLocaleString('pl-PL', { timeZone: timezone }),
+            sendDurationMs: sendDuration,
+            triggerToSendDelayMs: afterSend.getTime() - triggerTime.getTime(),
+          },
           'Daily reminder sent successfully',
         );
       } catch (error) {
