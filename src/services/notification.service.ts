@@ -171,19 +171,33 @@ export class NotificationService {
       'sendDailyReminder started',
     );
 
-    const devices = await this.prisma.deviceToken.findMany();
+    // Optymalizacja: pobierz tylko deviceId zamiast wszystkich pól
+    const devices = await this.prisma.deviceToken.findMany({
+      select: {
+        deviceId: true,
+      },
+    });
+    
     if (devices.length === 0) {
       this.logger.info('No devices found for daily reminder');
       return;
     }
 
     const deviceIds = devices.map((device) => device.deviceId);
+    const queryEndTime = new Date();
+    
     this.logger.info(
-      { deviceCount: deviceIds.length, deviceIds },
-      'Sending daily reminder to devices',
+      { 
+        deviceCount: deviceIds.length,
+        queryDurationMs: queryEndTime.getTime() - startTime.getTime(),
+      },
+      'Devices fetched, starting push notification send',
     );
 
     const beforePush = new Date();
+    
+    // Wysyłaj asynchronicznie - nie blokuj job, ale poczekaj na zakończenie
+    // aby móc zalogować czas wykonania
     await this.pushNotification.send(deviceIds, {
       title: 'Programy na dziś',
       body: 'Sprawdź, co dziś w TV i dodaj programy do śledzenia.',
@@ -191,18 +205,34 @@ export class NotificationService {
         type: 'DAILY_REMINDER',
       },
     });
+    
     const afterPush = new Date();
+    const pushDuration = afterPush.getTime() - beforePush.getTime();
+    const totalDuration = afterPush.getTime() - startTime.getTime();
 
     this.logger.info(
       { 
         deviceCount: deviceIds.length, 
         sentAt: afterPush.toISOString(),
         sentAtLocal: afterPush.toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' }),
-        pushDurationMs: afterPush.getTime() - beforePush.getTime(),
-        totalDurationMs: afterPush.getTime() - startTime.getTime(),
+        pushDurationMs: pushDuration,
+        totalDurationMs: totalDuration,
+        queryDurationMs: queryEndTime.getTime() - startTime.getTime(),
       },
       'Daily reminder push notifications sent',
     );
+    
+    // Ostrzeżenie jeśli wykonanie trwało dłużej niż 30 sekund
+    if (totalDuration > 30000) {
+      this.logger.warn(
+        { 
+          totalDurationMs: totalDuration,
+          pushDurationMs: pushDuration,
+          deviceCount: deviceIds.length,
+        },
+        'Daily reminder took longer than 30 seconds - consider optimizing',
+      );
+    }
   }
 
   /**
