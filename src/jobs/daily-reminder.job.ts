@@ -100,7 +100,6 @@ export function startDailyReminderJob(app: FastifyInstance): ScheduledTask | nul
     },
     {
       timezone,
-      scheduled: true,
     },
   );
   
