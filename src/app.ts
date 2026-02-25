@@ -49,7 +49,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   let reminderTask: ScheduledTask | null = null;
   let epgImportTask: ScheduledTask | null = null;
-  let dailyReminderTask: ScheduledTask | null = null;
+  let dailyReminderTask: { stop: () => void } | null = null;
   let startSoonTask: ScheduledTask | null = null;
 
   app.addHook('onReady', async () => {
