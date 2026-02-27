@@ -7,9 +7,14 @@ import {
   importIptvOrgEpg,
   pruneDisallowedChannels,
 } from '../services/iptv-org-importer';
+import { importAkpaEpg } from '../services/akpa-importer';
 
 export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
-  const enabled = env.EPG_AUTO_IMPORT_ENABLED ?? false;
+  const forceIptv = env.EPG_SOURCE === 'iptv' || process.env.EPG_SOURCE === 'iptv';
+  const hasAkpaToken = !!(env.AKPA_API_TOKEN ?? process.env.AKPA_API_TOKEN);
+  const useAkpa = hasAkpaToken && !forceIptv;
+
+  const enabled = env.EPG_AUTO_IMPORT_ENABLED ?? (useAkpa ? true : false);
   if (!enabled) {
     app.log.info('EPG auto-import job disabled (EPG_AUTO_IMPORT_ENABLED=false).');
     return null;
@@ -17,10 +22,10 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
 
   const schedule = env.EPG_AUTO_IMPORT_SCHEDULE ?? '0 3 * * *';
   const timezone = env.EPG_AUTO_IMPORT_TIMEZONE ?? 'Europe/Warsaw';
-  const runOnStart = env.EPG_AUTO_IMPORT_RUN_ON_START ?? false;
+  const runOnStart = env.EPG_AUTO_IMPORT_RUN_ON_START ?? (useAkpa ? true : false);
 
   app.log.info(
-    `Scheduling IPTV-Org auto-import with cron "${schedule}" (timezone ${timezone}).`,
+    `Scheduling EPG auto-import (${useAkpa ? 'AKPA' : 'IPTV-Org'}) with cron "${schedule}" (timezone ${timezone}).`,
   );
 
   let isRunning = false;
@@ -36,12 +41,14 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
       isRunning = true;
       try {
         app.log.info('EPG auto-import started.');
-        try {
-          await runConfiguredGrab(app.log);
-        } catch (error) {
-          app.log.error(error, 'Aktualizacja feedu (grab) nie powiodła się, kontynuuję import z istniejących danych.');
+        if (!useAkpa) {
+          try {
+            await runConfiguredGrab(app.log);
+          } catch (error) {
+            app.log.error(error, 'Aktualizacja feedu (grab) nie powiodła się, kontynuuję import z istniejących danych.');
+          }
+          await pruneDisallowedChannels(app.prisma, app.log);
         }
-        await pruneDisallowedChannels(app.prisma, app.log);
         await runSelectedImport(app);
         app.log.info('EPG auto-import finished successfully.');
       } catch (error) {
@@ -59,12 +66,14 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
     setImmediate(async () => {
       try {
         app.log.info('Running initial EPG import on startup.');
-        try {
-          await runConfiguredGrab(app.log);
-        } catch (error) {
-          app.log.error(error, 'Aktualizacja feedu (grab) na starcie nie powiodła się, używam bieżącego pliku.');
+        if (!useAkpa) {
+          try {
+            await runConfiguredGrab(app.log);
+          } catch (error) {
+            app.log.error(error, 'Aktualizacja feedu (grab) na starcie nie powiodła się, używam bieżącego pliku.');
+          }
+          await pruneDisallowedChannels(app.prisma, app.log);
         }
-        await pruneDisallowedChannels(app.prisma, app.log);
         await runSelectedImport(app);
         app.log.info('Initial EPG import finished successfully.');
       } catch (error) {
@@ -85,6 +94,15 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
 }
 
 async function runSelectedImport(app: FastifyInstance) {
+  const forceIptv = env.EPG_SOURCE === 'iptv' || process.env.EPG_SOURCE === 'iptv';
+  const hasAkpaToken = !!(env.AKPA_API_TOKEN ?? process.env.AKPA_API_TOKEN);
+  const useAkpa = hasAkpaToken && !forceIptv;
+
+  if (useAkpa) {
+    await importAkpaEpg(app.prisma, app.log);
+    return;
+  }
+
   const rawSelected = env.IPTV_ORG_SELECTED_IDS ?? '';
   const selected = rawSelected
     .split(',')
@@ -124,5 +142,8 @@ async function runSelectedImport(app: FastifyInstance) {
     return;
   }
 
-  throw new Error('Brak konfiguracji źródła EPG (EPG_SOURCE_URL / EPG_SOURCE_FILE).');
+  if (hasAkpaToken) {
+    throw new Error('Brak konfiguracji AKPA (sprawdź AKPA_API_TOKEN i AKPA_AUTH_TYPE).');
+  }
+  throw new Error('Brak konfiguracji źródła EPG (AKPA_API_TOKEN lub EPG_SOURCE_URL / EPG_SOURCE_FILE).');
 }

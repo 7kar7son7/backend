@@ -162,21 +162,77 @@ export class NotificationService {
   }
 
   async sendDailyReminder() {
-    const devices = await this.prisma.deviceToken.findMany();
+    const startTime = new Date();
+    this.logger.info(
+      { 
+        startTime: startTime.toISOString(),
+        startTimeLocal: startTime.toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' }),
+      },
+      'sendDailyReminder started',
+    );
+
+    // Optymalizacja: pobierz tylko deviceId zamiast wszystkich pól
+    const devices = await this.prisma.deviceToken.findMany({
+      select: {
+        deviceId: true,
+      },
+    });
+    
     if (devices.length === 0) {
+      this.logger.info('No devices found for daily reminder');
       return;
     }
 
-    await this.pushNotification.send(
-      devices.map((device) => device.deviceId),
-      {
-        title: 'Programy na dziś',
-        body: 'Sprawdź, co dziś w TV i dodaj programy do śledzenia.',
-        data: {
-          type: 'DAILY_REMINDER',
-        },
+    const deviceIds = devices.map((device) => device.deviceId);
+    const queryEndTime = new Date();
+    
+    this.logger.info(
+      { 
+        deviceCount: deviceIds.length,
+        queryDurationMs: queryEndTime.getTime() - startTime.getTime(),
       },
+      'Devices fetched, starting push notification send',
     );
+
+    const beforePush = new Date();
+    
+    // Wysyłaj asynchronicznie - nie blokuj job, ale poczekaj na zakończenie
+    // aby móc zalogować czas wykonania
+    await this.pushNotification.send(deviceIds, {
+      title: 'Programy na dziś',
+      body: 'Sprawdź, co dziś w TV i dodaj programy do śledzenia.',
+      data: {
+        type: 'DAILY_REMINDER',
+      },
+    });
+    
+    const afterPush = new Date();
+    const pushDuration = afterPush.getTime() - beforePush.getTime();
+    const totalDuration = afterPush.getTime() - startTime.getTime();
+
+    this.logger.info(
+      { 
+        deviceCount: deviceIds.length, 
+        sentAt: afterPush.toISOString(),
+        sentAtLocal: afterPush.toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw' }),
+        pushDurationMs: pushDuration,
+        totalDurationMs: totalDuration,
+        queryDurationMs: queryEndTime.getTime() - startTime.getTime(),
+      },
+      'Daily reminder push notifications sent',
+    );
+    
+    // Ostrzeżenie jeśli wykonanie trwało dłużej niż 30 sekund
+    if (totalDuration > 30000) {
+      this.logger.warn(
+        { 
+          totalDurationMs: totalDuration,
+          pushDurationMs: pushDuration,
+          deviceCount: deviceIds.length,
+        },
+        'Daily reminder took longer than 30 seconds - consider optimizing',
+      );
+    }
   }
 
   /**
@@ -364,7 +420,6 @@ export class NotificationService {
         }
       }
     }
-    }
 
     // 2. Przypomnienie 10 minut przed startem (dla HIGH i MEDIUM sensitivity)
     // Sprawdź programy startujące za 9-11 minut (szersze okno żeby nie przegapić)
@@ -490,7 +545,6 @@ export class NotificationService {
           });
         }
       }
-    }
     }
 
     // 3. Przypomnienie 5 minut przed startem (wszyscy użytkownicy)

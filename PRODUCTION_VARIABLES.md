@@ -191,10 +191,10 @@ FCM_SERVER_KEY=
 ## ⏰ HARMONOGRAMY
 
 ```bash
-DAILY_REMINDER_SCHEDULE=0 11 * * *
+DAILY_REMINDER_SCHEDULE=0 18 * * *
 ```
 **Opis:** Harmonogram codziennych przypomnień w formacie cron.  
-**Domyślnie:** `0 11 * * *` (codziennie o 11:00)
+**Domyślnie:** `0 18 * * *` (codziennie o 18:00)
 
 ---
 
@@ -242,7 +242,7 @@ EPG_GRAB_ENABLED=false
 # FCM_SERVER_KEY=your-fcm-server-key
 
 # HARMONOGRAMY
-DAILY_REMINDER_SCHEDULE=0 11 * * *
+DAILY_REMINDER_SCHEDULE=0 18 * * *
 
 # BEZPIECZEŃSTWO
 JWT_SECRET=your-secure-random-secret-min-32-chars
