@@ -1,10 +1,8 @@
 import { config as loadEnv } from 'dotenv';
 import { z } from 'zod';
 
-// W produkcji nie ładuj .env - zmienne są w process.env
-if (process.env.NODE_ENV !== 'production') {
-  loadEnv();
-}
+// Ładuj .env (w produkcji process.env z hosta ma pierwszeństwo; loadEnv nie nadpisuje istniejących)
+loadEnv();
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).optional(),
@@ -35,6 +33,8 @@ const envSchema = z.object({
   AKPA_API_URL: z.string().optional().transform((s) => s?.trim()),
   AKPA_API_TOKEN: z.string().optional().transform((s) => s?.trim()),
   AKPA_AUTH_TYPE: z.enum(['Bearer', 'Token', 'X-Api-Key']).optional(),
+  /** Gdy ustawione (np. "token"), token jest dodawany do URL: ?token=... (dla API wymagających auth w query) */
+  AKPA_AUTH_QUERY_PARAM: z.string().optional().transform((s) => s?.trim() || undefined),
   AKPA_LOGOS_BASE_URL: z.string().optional(),
   AKPA_LOGOS_USER: z.string().optional(),
   AKPA_LOGOS_PASSWORD: z.string().optional(),

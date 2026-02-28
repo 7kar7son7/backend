@@ -1,6 +1,11 @@
 # Konfiguracja AKPA – kanały i logotypy
 
-Aplikacja wyświetla listę kanałów z **bazy danych**. Kanały trafiają do bazy dopiero po **imporcie EPG ze źródła AKPA**. Jeśli lista kanałów jest pusta, najpierw skonfiguruj zmienne środowiskowe, a potem uruchom import.
+## Przepływ (tak jak przy starym EPG)
+
+- **Źródło (AKPA / stary EPG)** → **Backend** robi import do **bazy danych** → **Aplikacja** wywołuje `GET /channels` na **Twoim backendzie** → dostaje listę z bazy.  
+- Aplikacja **nigdy** nie wywołuje `api-epg.akpa.pl` – tylko backend przy imporcie. Jeśli w przeglądarce otworzysz `https://api-epg.akpa.pl/api/v1/channels`, dostaniesz **403 Not authenticated** – to normalne (brak tokenu). Token musi być w backendzie (`.env`) i używany przy imporcie.
+
+Aplikacja wyświetla listę kanałów z **bazy danych**. Kanały trafiają do bazy dopiero po **imporcie EPG ze źródła AKPA**. Jeśli lista kanałów jest pusta, najpierw skonfiguruj zmienne środowiskowe na backendzie, a potem uruchom import (lub restart z auto-importem).
 
 ## 1. Zmienne środowiskowe (`.env` lub panel hostingu)
 
@@ -63,7 +68,8 @@ Po udanym imporcie endpoint `GET /channels` zwróci listę kanałów z AKPA, a a
 
 ## Dlaczego brak listy kanałów?
 
-1. **Brak `AKPA_API_TOKEN`** – backend nie wie, że ma używać AKPA; import nie pobiera kanałów.
-2. **`EPG_SOURCE=iptv`** – wymusza źródło IPTV zamiast AKPA.
-3. **Import nigdy nie został uruchomiony** – po ustawieniu zmiennych trzeba zrestartować backend (run on start) lub wywołać `POST /epg/import`.
-4. **Błąd importu (np. 403)** – sprawdź logi; ewentualnie zmień `AKPA_AUTH_TYPE` na `Token` lub `X-Api-Key`.
+1. **Brak `AKPA_API_TOKEN`** – backend nie ma tokenu; import do AKPA nie pobiera kanałów (lub dostaje 403).
+2. **403 przy imporcie** – token w `.env` jest pusty, błędny lub wygasły. AKPA wymaga autoryzacji (domyślnie nagłówek `Authorization: Bearer TOKEN`). Sprawdź logi backendu przy starcie / przy `POST /epg/import`. Nie ustawiaj `AKPA_AUTH_QUERY_PARAM` jeśli AKPA nie wymaga tokenu w URL.
+3. **`EPG_SOURCE=iptv`** – wymusza źródło IPTV zamiast AKPA.
+4. **Import nigdy nie został uruchomiony** – po ustawieniu zmiennych zrestartuj backend (run on start) lub wywołaj `POST /epg/import`.
+5. **Aplikacja łączy się z innym backendem** – upewnij się, że w aplikacji `API_BASE_URL` wskazuje na ten sam backend, na którym działa import (np. `https://backend.devstudioit.app`).

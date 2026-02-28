@@ -48,16 +48,54 @@ function buildAuthHeaders(token: string, type: (typeof AUTH_TYPES)[number]): Rec
   return headers;
 }
 
+/** Nazwa parametru w URL (nie wartość tokenu). Gdy użytkownik wklei token zamiast nazwy, używamy "token". */
+function getAuthQueryParamName(): string | undefined {
+  const raw = env.AKPA_AUTH_QUERY_PARAM ?? process.env.AKPA_AUTH_QUERY_PARAM;
+  if (!raw || !raw.trim()) return undefined;
+  const s = raw.trim();
+  if (s.length > 40 || (s.length > 15 && !/^[a-z_]+$/i.test(s))) {
+    return 'token';
+  }
+  return s;
+}
+
+const QUERY_PARAM_NAMES_TO_TRY = ['token', 'api_key', 'access_token', 'apikey'] as const;
+
+function buildChannelsUrlWithParam(baseUrl: string, token: string, paramName: string): string {
+  const path = `${baseUrl}/channels`;
+  const sep = path.includes('?') ? '&' : '?';
+  return `${path}${sep}${encodeURIComponent(paramName)}=${encodeURIComponent(token.trim())}`;
+}
+
+function buildChannelsUrl(baseUrl: string, token: string): string {
+  const paramName = getAuthQueryParamName();
+  if (paramName && token) {
+    return buildChannelsUrlWithParam(baseUrl, token, paramName);
+  }
+  return `${baseUrl}/channels`;
+}
+
 async function fetchChannels(
   baseUrl: string,
   token: string,
   logger: FastifyBaseLogger,
   authType: (typeof AUTH_TYPES)[number] = 'Bearer',
+  queryParamName?: string | null,
 ): Promise<AkpaChannelRaw[]> {
-  const url = `${baseUrl}/channels`;
+  const url =
+    queryParamName === null
+      ? `${baseUrl}/channels`
+      : queryParamName
+        ? buildChannelsUrlWithParam(baseUrl, token, queryParamName)
+        : buildChannelsUrl(baseUrl, token);
+  const useQueryAuth = queryParamName !== null && (!!queryParamName || !!getAuthQueryParamName());
+  const headers =
+    useQueryAuth && token.trim()
+      ? { Accept: 'application/json' }
+      : buildAuthHeaders(token, authType);
   const res = await fetch(url, {
     method: 'GET',
-    headers: buildAuthHeaders(token, authType),
+    headers,
   });
 
   if (!res.ok) {
@@ -89,10 +127,11 @@ async function fetchChannelsWithAuthRetry(
       ? [configured, ...AUTH_TYPES.filter((t) => t !== configured)]
       : [...AUTH_TYPES];
 
+  // Zawsze najpierw nagłówek (AKPA przyjmuje Bearer) – niezależnie od AKPA_AUTH_QUERY_PARAM
   for (const authType of toTry) {
     try {
-      const channels = await fetchChannels(baseUrl, token, logger, authType);
-      if (channels.length > 0 || authType === toTry[0]) {
+      const channels = await fetchChannels(baseUrl, token, logger, authType, null);
+      if (channels.length >= 0) {
         if (authType !== configured) {
           logger.info(`AKPA: działa z auth type=${authType}. Możesz ustawić AKPA_AUTH_TYPE=${authType}`);
         }
@@ -106,7 +145,33 @@ async function fetchChannelsWithAuthRetry(
       throw e;
     }
   }
-  throw new Error('AKPA API: 403 dla wszystkich typów autoryzacji (Bearer, Token, X-Api-Key)');
+
+  const paramName = getAuthQueryParamName();
+  const queryParamsToTry = paramName
+    ? [paramName, ...QUERY_PARAM_NAMES_TO_TRY.filter((p) => p !== paramName)]
+    : [...QUERY_PARAM_NAMES_TO_TRY];
+
+  for (const queryParam of queryParamsToTry) {
+    try {
+      const channels = await fetchChannels(baseUrl, token, logger, toTry[0], queryParam);
+      if (channels.length >= 0) {
+        if (queryParam !== queryParamsToTry[0]) {
+          logger.info(`AKPA: działa z query param=${queryParam}. Ustaw AKPA_AUTH_QUERY_PARAM=${queryParam}`);
+        }
+        return { channels, authType: toTry[0] ?? configured };
+      }
+    } catch (e) {
+      if ((e as Error).message?.includes('403')) {
+        logger.warn({ queryParam }, 'AKPA 403, próbuję innego query param');
+        continue;
+      }
+      throw e;
+    }
+  }
+
+  throw new Error(
+    'AKPA API 403 Not authenticated. Ustaw AKPA_API_TOKEN w .env (lokalnie) lub w zmiennych środowiskowych na serwerze. Token musi być ważny u AKPA.',
+  );
 }
 
 /**
