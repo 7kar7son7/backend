@@ -10,6 +10,7 @@ import {
   loadAkpaLogoFolderMap,
   getCachedAkpaFolderList,
   findBestFolder,
+  channelNameToFolderCandidate,
 } from '../utils/akpa-logo-folders';
 
 const STATIC_LOGOS_DIR = join(process.cwd(), 'static', 'logos', 'akpa');
@@ -207,7 +208,8 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
       const folderList = await getCachedAkpaFolderList(baseUrl, authHeader);
       const mappedFolder = folderMap[channelId];
       const runtimeFolder = folderList.length > 0 ? findBestFolder(channel.name, folderList) : null;
-      const folder = mappedFolder ?? runtimeFolder ?? null;
+      const nameFolder = channelNameToFolderCandidate(channel.name);
+      const folder = mappedFolder ?? runtimeFolder ?? nameFolder ?? null;
       if (folder) {
         let result = await fetchLogoFromAkpaFolder(baseUrl, authHeader, folder, (msg, meta) => {
           request.log.debug(meta ?? {}, msg);

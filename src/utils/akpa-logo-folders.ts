@@ -26,7 +26,7 @@ export function parseFolderNamesFromHtml(html: string): string[] {
   return [...new Set(folders)];
 }
 
-function normalize(s: string): string {
+export function normalize(s: string): string {
   return s
     .toLowerCase()
     .trim()
@@ -37,6 +37,12 @@ function normalize(s: string): string {
 
 function normalizeNoSpaces(s: string): string {
   return normalize(s).replace(/\s/g, '');
+}
+
+/** Kandydat na nazwę folderu AKPA z nazwy kanału (do fallback gdy brak w mapie i lista folderów pusta). */
+export function channelNameToFolderCandidate(channelName: string): string | null {
+  const n = normalize(channelName);
+  return n || null;
 }
 
 /**

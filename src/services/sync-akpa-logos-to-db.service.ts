@@ -11,6 +11,7 @@ import {
   loadAkpaLogoFolderMap,
   getCachedAkpaFolderList,
   findBestFolder,
+  channelNameToFolderCandidate,
 } from '../utils/akpa-logo-folders';
 
 const DEFAULT_AKPA_LOGOS_BASE = 'https://logotypy.akpa.pl/logotypy-tv';
@@ -79,7 +80,8 @@ export async function syncAkpaLogosToDb(
     const mappedFolder = folderMap[ch.externalId];
     const runtimeFolder =
       folderList.length > 0 ? findBestFolder(ch.name, folderList) : null;
-    const folder = mappedFolder ?? runtimeFolder ?? null;
+    const nameFolder = channelNameToFolderCandidate(ch.name);
+    const folder = mappedFolder ?? runtimeFolder ?? nameFolder ?? null;
 
     if (!folder) {
       failed++;

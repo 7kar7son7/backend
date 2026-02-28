@@ -28,25 +28,31 @@ function ensureAbsoluteOrLeadingSlash(value: string): string {
 }
 
 /**
- * Zamienia względny logoUrl na pełny URL gdy ustawiono PUBLIC_API_URL (dla aplikacji mobilnej).
- * Bez PUBLIC_API_URL zwraca ścieżkę z leading slash, żeby aplikacja mogła dopiąć apiBaseUrl.
- * WAŻNE: W produkcji ustaw PUBLIC_API_URL na publiczny URL API (np. https://backend.example.com),
- * inaczej aplikacja mobilna może nie móc załadować obrazków (np. gdy apiBaseUrl się różni).
+ * Zamienia względny logoUrl na pełny URL gdy ustawiono PUBLIC_API_URL.
+ * Używane tylko gdy API i aplikacja są na różnych domenach i trzeba zwrócić pełny URL.
  */
 export function toAbsoluteLogoUrl(logoUrl: string | null): string | null {
   if (logoUrl == null || logoUrl.trim() === '') return null;
   const trimmed = logoUrl.trim();
   const path = ensureAbsoluteOrLeadingSlash(trimmed);
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
-  const base = (env.PUBLIC_API_URL ?? process.env.PUBLIC_API_URL ?? 'https://backend.devstudioit.app').trim().replace(/\/+$/, '');
+  const base = (env.PUBLIC_API_URL ?? process.env.PUBLIC_API_URL ?? '').trim().replace(/\/+$/, '');
   if (!base) return path;
   return `${base}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-/** Logo URL do zwrócenia w API: z bazy / fallback AKPA + opcjonalnie jako pełny URL. */
+/**
+ * Logo URL do zwrócenia w API. Zwracamy ścieżkę względną (/logos/akpa/xxx),
+ * żeby aplikacja dopinała apiBaseUrl i ładowała obrazki z tego samego backendu co API.
+ * (Gdy PUBLIC_API_URL jest ustawione, zwracamy pełny URL.)
+ */
 export function resolveChannelLogoUrlForApi(channel: {
   externalId: string;
   logoUrl: string | null;
 }): string | null {
-  return toAbsoluteLogoUrl(resolveChannelLogoUrl(channel));
+  const path = resolveChannelLogoUrl(channel);
+  if (path == null) return null;
+  const base = (env.PUBLIC_API_URL ?? process.env.PUBLIC_API_URL ?? '').trim().replace(/\/+$/, '');
+  if (base) return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  return path;
 }
