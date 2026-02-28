@@ -1,4 +1,5 @@
 import healthRoutes from './health';
+import appRoutes from './app';
 import channelsRoutes from './channels';
 import followsRoutes from './follows';
 import eventsRoutes from './events';
@@ -11,6 +12,7 @@ export async function registerRoutes<T extends import('fastify').FastifyInstance
   app: T,
 ) {
   await app.register(healthRoutes, { prefix: '/health' });
+  await app.register(appRoutes, { prefix: '/app' });
   await app.register(channelsRoutes, { prefix: '/channels' });
   await app.register(followsRoutes, { prefix: '/follows' });
   await app.register(eventsRoutes, { prefix: '/events' });

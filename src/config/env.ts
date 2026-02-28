@@ -49,6 +49,10 @@ const envSchema = z.object({
   DAILY_REMINDER_SCHEDULE: z.string().optional(),
   DAILY_REMINDER_ENABLED: z.coerce.boolean().optional(),
   ADMIN_EVENT_SECRET: z.string().optional(),
+  APP_VERSION: z.string().optional(),
+  APP_BUILD_NUMBER: z.coerce.number().optional(),
+  APP_MIN_REQUIRED_VERSION: z.string().optional(),
+  APP_UPDATE_URL: z.string().url().optional(),
 });
 
 export const env = envSchema.parse(process.env);

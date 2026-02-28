@@ -55,6 +55,10 @@ export default async function channelsRoutes(app: FastifyInstance) {
     }
 
     const channels = await channelService.listChannels(filters);
+    request.log.info(
+      { count: channels.length, limit: filters.limit, offset: filters.offset },
+      'GET /channels – lista kanałów',
+    );
 
     const formattedChannels = channels.map((channel) => {
       const base = {

@@ -1,7 +1,23 @@
 # 🔍 Diagnostyka problemu 502 Bad Gateway
 
 ## Problem
-Backend działa po zbudowaniu, ale po jakimś czasie przestaje odpowiadać (błędy 502). Musisz ponownie zbudować projekt.
+Aplikacja dostaje **502 Bad Gateway** przy requestach do `backend.devstudioit.app`. Gdy request **dojdzie** do backendu, zwraca 200 i kanały działają. W **kodzie nic nie zmienialiśmy** – backend nadal nasłuchuje na tym samym porcie (3000) jak przy starym EPG; konfiguracji proxy nikt nie ruszał.
+
+Czyli 502 zwraca **warstwa przed backendem** (hosting / reverse proxy). Możliwe przyczyny:
+- po stronie hostingu (restart, inna instancja, błąd deployu),
+- albo tymczasowe problemy (timeout, przeciążenie).
+
+## Gdzie to sprawdzić
+
+- **Jeśli backend hostujesz u kogoś (np. DevStudioIT.cloud):** w **panelu tego hostingu** – tam gdzie masz projekt/serwis backendu, domenę `backend.devstudioit.app` i ustawienia „na co kierować ruch”. Ewentualnie zapytaj support: czy serwis backendu działa i czy jest poprawnie wystawiony pod tą domeną.
+- **Jeśli masz własny serwer (VPS) i sam stawiasz nginx/Caddy:** w **konfiguracji reverse proxy** na tym serwerze – virtual host / server block dla `backend.devstudioit.app` i proxy_pass na port, na którym działa Node (np. 3000).
+
+Przydatny test: w przeglądarce `https://backend.devstudioit.app/health` – jeśli 200 i `{"status":"ok",...}`, to backend jest osiągalny; jeśli 502, request w ogóle do niego nie dochodzi.
+
+---
+
+## Dodatkowe możliwe przyczyny (gdy infrastruktura jest OK)
+Backend działa po zbudowaniu, ale po jakimś czasie przestaje odpowiadać (błędy 502). Możliwe: timeouty, pamięć, crash procesu.
 
 ## Możliwe przyczyny
 
@@ -94,4 +110,12 @@ Jeśli problem nadal występuje, skontaktuj się z DevStudioIT.cloud i zapytaj:
 - Czy mają limity pamięci?
 - Jak skonfigurować healthcheck?
 - Jak zwiększyć timeouty w reverse proxy?
+
+---
+
+## Podsumowanie
+
+- **502** = odpowiedź zwraca warstwa przed backendem (hosting/proxy). W kodzie backendu nic nie zmienialiśmy – nasłuchuje tak samo jak przy starym EPG (port 3000).
+- Gdy request **dojdzie** do backendu → **200**, kanały się ładują.
+- **Gdzie sprawdzić:** panel hostingu (gdzie ustawiasz domenę i serwis) albo, przy własnym VPS, konfig reverse proxy. Test: `https://backend.devstudioit.app/health`.
 
