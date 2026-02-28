@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
 import { ChannelService } from '../services/channel.service';
 import { ProgramService } from '../services/program.service';
 
@@ -33,14 +34,6 @@ const programsQuerySchema = z.object({
     .transform((value) => (value ? new Date(value) : undefined)),
 });
 
-function resolveLogoUrl(channel: { externalId: string; logoUrl: string | null }): string | null {
-  if (channel.logoUrl != null && String(channel.logoUrl).trim() !== '') {
-    return String(channel.logoUrl);
-  }
-  const extId = String(channel.externalId);
-  return extId.startsWith('akpa_') ? `/logos/akpa/${extId}` : null;
-}
-
 export default async function channelsRoutes(app: FastifyInstance) {
   const channelService = new ChannelService(app.prisma);
   const programService = new ProgramService(app.prisma);
@@ -69,13 +62,13 @@ export default async function channelsRoutes(app: FastifyInstance) {
     );
 
     const formattedChannels = channels.map((channel) => {
-      const resolvedLogoUrl = resolveLogoUrl(channel);
+      const resolvedLogoUrl = resolveChannelLogoUrlForApi(channel);
       const base = {
         id: String(channel.id),
         externalId: String(channel.externalId),
         name: String(channel.name),
         description: channel.description != null ? String(channel.description) : null,
-        logoUrl: resolvedLogoUrl,
+        logoUrl: resolvedLogoUrl ?? null,
         category: channel.category != null ? String(channel.category) : null,
         countryCode: channel.countryCode != null ? String(channel.countryCode) : null,
       };
@@ -90,13 +83,13 @@ export default async function channelsRoutes(app: FastifyInstance) {
         title: String(program.title),
         channelId: String(program.channelId),
         channelName: String(channel.name),
-        channelLogoUrl: resolvedLogoUrl,
+        channelLogoUrl: resolvedLogoUrl ?? null,
         description: program.description != null ? String(program.description) : null,
         seasonNumber: program.seasonNumber ?? null,
         episodeNumber: program.episodeNumber ?? null,
         startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
         endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-        imageUrl: program.imageUrl != null ? String(program.imageUrl) : resolvedLogoUrl,
+        imageUrl: program.imageUrl != null ? String(program.imageUrl) : (resolvedLogoUrl ?? null),
         tags: Array.isArray(program.tags) ? program.tags.map((t: unknown) => String(t)) : [],
       }));
       // Gdy 0 programów – nie dodawaj klucza "programs", żeby format był jak GET bez includePrograms (działa w Ustawieniach).
@@ -117,7 +110,7 @@ export default async function channelsRoutes(app: FastifyInstance) {
       return reply.notFound('Channel not found');
     }
 
-    const logoUrl = resolveLogoUrl(channel);
+    const logoUrl = resolveChannelLogoUrlForApi(channel);
     return { data: { ...channel, logoUrl } };
   });
 
@@ -143,7 +136,7 @@ export default async function channelsRoutes(app: FastifyInstance) {
       filter,
     );
 
-    const logoUrl = resolveLogoUrl(channel);
+    const logoUrl = resolveChannelLogoUrlForApi(channel);
     return {
       data: {
         channel: { ...channel, logoUrl },

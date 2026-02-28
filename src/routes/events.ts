@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { EventService } from '../services/event.service';
 import { NotificationService } from '../services/notification.service';
 import { PointsService } from '../services/points.service';
+import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
 import { getDeviceId } from '../utils/device';
 import { env } from '../config/env';
 
@@ -46,7 +47,7 @@ export default async function eventsRoutes(app: FastifyInstance) {
       program: {
         ...event.program,
         channelName: event.program.channel?.name ?? event.program.channelId,
-        channelLogoUrl: event.program.channel?.logoUrl ?? null,
+        channelLogoUrl: event.program.channel ? resolveChannelLogoUrlForApi(event.program.channel) : null,
       },
     };
   }
@@ -68,7 +69,7 @@ export default async function eventsRoutes(app: FastifyInstance) {
       program: {
         ...event.program,
         channelName: event.program.channel?.name ?? event.program.channelId,
-        channelLogoUrl: event.program.channel?.logoUrl ?? null,
+        channelLogoUrl: event.program.channel ? resolveChannelLogoUrlForApi(event.program.channel) : null,
       },
     }));
     
@@ -123,7 +124,7 @@ export default async function eventsRoutes(app: FastifyInstance) {
           channelId: event.program.channelId,
           programTitle: channelName ? `${channelName}: ${programTitle}` : programTitle,
           startsAt: event.program.startsAt.toISOString(),
-          channelLogoUrl: event.program.channel?.logoUrl ?? null,
+          channelLogoUrl: event.program.channel ? resolveChannelLogoUrlForApi(event.program.channel) : null,
         };
 
         await notificationService.sendEventStartedNotification(recipients, payload);
@@ -259,7 +260,7 @@ export default async function eventsRoutes(app: FastifyInstance) {
             channelId: eventBefore.program.channelId,
             programTitle: channelName ? `${channelName}: ${programTitle}` : programTitle,
             startsAt: eventBefore.program.startsAt.toISOString(),
-            channelLogoUrl: eventBefore.program.channel?.logoUrl ?? null,
+            channelLogoUrl: eventBefore.program.channel ? resolveChannelLogoUrlForApi(eventBefore.program.channel) : null,
           };
 
           await notificationService.sendEventConfirmationNotification(
@@ -315,7 +316,7 @@ export default async function eventsRoutes(app: FastifyInstance) {
               channelId: eventBefore.program.channelId,
               programTitle: channelName ? `${channelName}: ${programTitle}` : programTitle,
               startsAt: eventBefore.program.startsAt.toISOString(),
-              channelLogoUrl: eventBefore.program.channel?.logoUrl ?? null,
+              channelLogoUrl: eventBefore.program.channel ? resolveChannelLogoUrlForApi(eventBefore.program.channel) : null,
             };
 
             await notificationService.sendEventStartedNotification(recipients, payload);

@@ -50,10 +50,24 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
 
     const channel = await app.prisma.channel.findUnique({
       where: { externalId: channelId },
-      select: { name: true },
+      select: { name: true, logoData: true, logoContentType: true },
     });
-    if (!channel?.name) {
+    if (!channel) {
       request.log.info({ channelId, status: 404 }, 'logos/akpa channel not in DB');
+      return reply.code(404).send({ error: 'Logo not found' });
+    }
+
+    if (channel.logoData && channel.logoData.length > 0) {
+      const contentType = channel.logoContentType ?? 'image/png';
+      request.log.info({ channelId, status: 200 }, 'logos/akpa served from DB');
+      return reply
+        .header('Cache-Control', 'public, max-age=86400')
+        .type(contentType)
+        .send(Buffer.from(channel.logoData));
+    }
+
+    if (!channel.name) {
+      request.log.info({ channelId, status: 404 }, 'logos/akpa no name for AKPA fallback');
       return reply.code(404).send({ error: 'Logo not found' });
     }
 

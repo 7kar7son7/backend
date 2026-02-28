@@ -224,12 +224,14 @@ async function main() {
       const filePath = join(STATIC_LOGOS_DIR, `${ch.externalId}.${ext}`);
       await writeFile(filePath, result.body);
       const logoUrl = `/logos/akpa/${ch.externalId}`;
+      const logoContentType =
+        ext === 'svg' ? 'image/svg+xml' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
       await prisma.channel.update({
         where: { id: ch.id },
-        data: { logoUrl },
+        data: { logoUrl, logoData: result.body, logoContentType },
       });
       ok++;
-      console.log(`  OK ${ch.name} -> folder "${folder}" -> ${ch.externalId}.${ext}`);
+      console.log(`  OK ${ch.name} -> folder "${folder}" -> ${ch.externalId}.${ext} (zapis do bazy)`);
     } else {
       fail++;
       console.log(`  BRAK ${ch.name} (${ch.externalId})${folder ? ` [folder: ${folder}]` : ' [brak dopasowania]'}`);

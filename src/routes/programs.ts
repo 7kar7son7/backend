@@ -1,6 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
+
 const dayQuerySchema = z.object({
   date: z
     .string()
@@ -48,13 +50,13 @@ export default async function programsRoutes(app: FastifyInstance) {
           title: program.title,
           channelId: program.channelId,
           channelName: program.channel?.name ?? program.channelId ?? 'Nieznany kanał',
-          channelLogoUrl: program.channel?.logoUrl ?? null,
+          channelLogoUrl: program.channel ? resolveChannelLogoUrlForApi(program.channel) : null,
           description: program.description,
           seasonNumber: program.seasonNumber,
           episodeNumber: program.episodeNumber,
           startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
           endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-          imageUrl: program.imageUrl ?? program.channel?.logoUrl ?? null,
+          imageUrl: program.imageUrl ?? (program.channel ? resolveChannelLogoUrlForApi(program.channel) : null) ?? null,
           tags: program.tags ?? [],
         },
       };
@@ -172,13 +174,13 @@ export default async function programsRoutes(app: FastifyInstance) {
             title: program.title,
             channelId: program.channelId,
             channelName: program.channel?.name ?? program.channelId ?? 'Nieznany kanał',
-            channelLogoUrl: program.channel?.logoUrl ?? null,
+            channelLogoUrl: program.channel ? resolveChannelLogoUrlForApi(program.channel) : null,
             description: program.description,
             seasonNumber: program.seasonNumber,
             episodeNumber: program.episodeNumber,
             startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
             endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-            imageUrl: program.imageUrl ?? program.channel?.logoUrl ?? null,
+            imageUrl: program.imageUrl ?? (program.channel ? resolveChannelLogoUrlForApi(program.channel) : null) ?? null,
             tags: program.tags ?? [],
           })),
       };

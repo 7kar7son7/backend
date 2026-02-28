@@ -18,7 +18,8 @@
     "test:epg-source": "tsx src/scripts/test-epg-source.ts",
     "check:epg-channels": "tsx src/scripts/check-epg-channels.ts",
     "logos:restore": "tsx src/scripts/restore-logos.ts",
-    "logos:download:akpa": "tsx src/scripts/download-akpa-logos.ts"
+    "logos:download:akpa": "tsx src/scripts/download-akpa-logos.ts",
+    "logos:sync-static-to-db": "tsx src/scripts/sync-logos-static-to-db.ts"
   },
   "keywords": [],
   "author": "",

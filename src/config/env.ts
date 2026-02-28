@@ -55,6 +55,8 @@ const envSchema = z.object({
   APP_BUILD_NUMBER: z.coerce.number().optional(),
   APP_MIN_REQUIRED_VERSION: z.string().optional(),
   APP_UPDATE_URL: z.string().url().optional(),
+  /** Public URL API – logoUrl w odpowiedziach jako pełne URLe */
+  PUBLIC_API_URL: z.string().optional().transform((s) => (s?.trim() || undefined)),
 });
 
 export const env = envSchema.parse(process.env);
