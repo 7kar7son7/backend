@@ -36,7 +36,9 @@ EPG_AUTO_IMPORT_ENABLED=true
 EPG_AUTO_IMPORT_RUN_ON_START=true
 ```
 
-### Logotypy kanałów (opcjonalne)
+### Logotypy kanałów (wymagane, żeby nie było inicjałów zamiast logo)
+
+**Na produkcji ustaw te zmienne** – inaczej GET /logos/akpa/* zwraca 404 i w aplikacji widać inicjały. Po starcie backend uruchamia w tle synchronizację logotypów z AKPA do bazy (dla kanałów bez logoData).
 
 Logotypy z aktualnej oferty:
 

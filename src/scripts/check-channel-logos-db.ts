@@ -13,15 +13,19 @@ async function main() {
   });
   const withLogoNonEmpty = await prisma.channel.count({
     where: {
-      logoUrl: { not: null, not: '' },
+      AND: [{ logoUrl: { not: null } }, { logoUrl: { not: '' } }],
     },
   });
   const akpaChannels = await prisma.channel.count({
     where: { externalId: { startsWith: 'akpa_' } },
   });
+  const withLogoData = await prisma.channel.count({
+    where: { logoData: { not: null } },
+  });
 
   console.log('\n=== KANAŁY W BAZIE ===\n');
   console.log('Wszystkich kanałów:        ', total);
+  console.log('Z logoData (binaria w DB): ', withLogoData);
   console.log('Z logoUrl NOT NULL:        ', withLogoNotNull);
   console.log('Z logoUrl niepustym:       ', withLogoNonEmpty);
   console.log('externalId zaczyna się akpa_:', akpaChannels);
@@ -58,7 +62,7 @@ async function main() {
   }
 
   const withLogo = await prisma.channel.findMany({
-    where: { logoUrl: { not: null, not: '' } },
+    where: { AND: [{ logoUrl: { not: null } }, { logoUrl: { not: '' } }] },
     take: 8,
     select: { externalId: true, name: true, logoUrl: true },
   });

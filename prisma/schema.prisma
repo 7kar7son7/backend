@@ -13,14 +13,14 @@ model Channel {
   name             String
   description      String?
   logoUrl          String?
-  logoData         Bytes?         @db.ByteA
+  logoData         Bytes?
   logoContentType  String?        @db.VarChar(64)
   category         String?
-  countryCode      String?        @db.VarChar(8)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  channelFollows   FollowedItem[]
-  programs         Program[]
+  countryCode    String?        @db.VarChar(8)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  channelFollows FollowedItem[]
+  programs       Program[]
 
   @@map("channels")
 }

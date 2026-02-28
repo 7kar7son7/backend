@@ -17,6 +17,7 @@ import { config as loadEnv } from 'dotenv';
 loadEnv();
 
 import { env } from '../config/env';
+import { parseFolderNamesFromHtml, findBestFolder } from '../utils/akpa-logo-folders';
 
 const prisma = new PrismaClient();
 
@@ -37,68 +38,10 @@ function parseFileLinksFromHtml(html: string): string[] {
   return files;
 }
 
-function parseFolderNamesFromHtml(html: string): string[] {
-  const folders: string[] = [];
-  const re = /<a href="([^"]+)\/">/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(html)) !== null) {
-    const href = m[1];
-    if (href == null) continue;
-    const s = href.trim();
-    if (s === '..' || s === '/' || s.startsWith('?')) continue;
-    try {
-      const decoded = decodeURIComponent(s).replace(/\/+$/, '').trim();
-      if (decoded && decoded !== 'Parent Directory') folders.push(decoded);
-    } catch {
-      folders.push(s.replace(/\/+$/, '').trim());
-    }
-  }
-  return [...new Set(folders)];
-}
-
 async function fetchListing(url: string, authHeader: string): Promise<string> {
   const res = await fetch(url, { method: 'GET', headers: { Authorization: authHeader } });
   if (!res.ok) throw new Error(`Listing ${url}: ${res.status}`);
   return res.text();
-}
-
-function normalize(s: string): string {
-  return s
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, ' ')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-}
-
-function normalizeNoSpaces(s: string): string {
-  return normalize(s).replace(/\s/g, '');
-}
-
-/** Znajdź folder z listy pasujący do nazwy kanału (bez HD, z HD, bez spacji itd.). */
-function findBestFolder(channelName: string, folderList: string[]): string | null {
-  const n = normalize(channelName);
-  const nNoSpace = normalizeNoSpaces(channelName);
-  if (!n) return null;
-
-  const byNorm = new Map<string, string>();
-  for (const f of folderList) {
-    const fn = normalize(f);
-    if (!byNorm.has(fn)) byNorm.set(fn, f);
-  }
-
-  if (byNorm.has(n)) return byNorm.get(n)!;
-  if (byNorm.has(n + ' hd')) return byNorm.get(n + ' hd')!;
-  if (n.endsWith(' hd') && byNorm.has(n.slice(0, -3))) return byNorm.get(n.slice(0, -3))!;
-  if (byNorm.has(nNoSpace)) return byNorm.get(nNoSpace)!;
-  for (const [fn, orig] of byNorm) {
-    if (fn === n || fn.startsWith(n + ' ') || n.startsWith(fn) || fn.replace(/\s/g, '') === nNoSpace) return orig;
-  }
-  for (const [fn, orig] of byNorm) {
-    if (fn.includes(n) || n.includes(fn)) return orig;
-  }
-  if (n === 'dizi' && byNorm.has('novelas+')) return byNorm.get('novelas+')!;
-  return null;
 }
 
 async function fetchFolderListing(baseUrl: string, authHeader: string, folderName: string): Promise<string[]> {
@@ -199,6 +142,7 @@ async function main() {
 
   let ok = 0;
   let fail = 0;
+  const folderMap: Record<string, string> = {};
   const newAuth =
     newBase && newUser && newPassword
       ? 'Basic ' + Buffer.from(`${newUser}:${newPassword}`).toString('base64')
@@ -219,26 +163,34 @@ async function main() {
       }
     }
 
-    if (result) {
+    if (result && folder) {
+      folderMap[ch.externalId] = folder;
       const ext = result.ext;
       const filePath = join(STATIC_LOGOS_DIR, `${ch.externalId}.${ext}`);
       await writeFile(filePath, result.body);
       const logoUrl = `/logos/akpa/${ch.externalId}`;
       const logoContentType =
-        ext === 'svg' ? 'image/svg+xml' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
+        ext === 'svg' ? 'image/svg+xml' : ext === 'jpg' ? 'image/jpeg' : 'image/png';
       await prisma.channel.update({
         where: { id: ch.id },
-        data: { logoUrl, logoData: result.body, logoContentType },
+        data: {
+          logoUrl,
+          logoData: new Uint8Array(result.body),
+          logoContentType,
+        },
       });
       ok++;
-      console.log(`  OK ${ch.name} -> folder "${folder}" -> ${ch.externalId}.${ext} (zapis do bazy)`);
+      console.log(`  OK ${ch.name} -> folder "${folder}" -> DB + ${ch.externalId}.${ext}`);
     } else {
       fail++;
       console.log(`  BRAK ${ch.name} (${ch.externalId})${folder ? ` [folder: ${folder}]` : ' [brak dopasowania]'}`);
     }
   }
 
-  console.log(`\nGotowe: ${ok} pobranych, ${fail} bez logotypu. Pliki: ${STATIC_LOGOS_DIR}`);
+  const mapPath = join(process.cwd(), 'src', 'data', 'akpa-logo-folder-map.json');
+  await writeFile(mapPath, JSON.stringify(folderMap, null, 2), 'utf8');
+  console.log(`\nMapa zapisana: ${mapPath} (${Object.keys(folderMap).length} kanałów)`);
+  console.log(`Gotowe: ${ok} pobranych, ${fail} bez logotypu. Pliki: ${STATIC_LOGOS_DIR}`);
 }
 
 main()

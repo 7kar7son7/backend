@@ -4,7 +4,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "rimraf dist && tsc",
+    "build": "rimraf dist && tsc && node -e \"const fs=require('fs'); const p='src/data/akpa-logo-folder-map.json'; if(fs.existsSync(p)){ fs.mkdirSync('data',{recursive:true}); fs.copyFileSync(p,'data/akpa-logo-folder-map.json'); }\"",
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -19,6 +19,7 @@
     "check:epg-channels": "tsx src/scripts/check-epg-channels.ts",
     "logos:restore": "tsx src/scripts/restore-logos.ts",
     "logos:download:akpa": "tsx src/scripts/download-akpa-logos.ts",
+    "logos:build-map": "tsx src/scripts/build-akpa-logo-map.ts",
     "logos:sync-static-to-db": "tsx src/scripts/sync-logos-static-to-db.ts"
   },
   "keywords": [],

@@ -1,21 +1,13 @@
 /**
- * Czyta pliki z static/logos/akpa/* i zapisuje je do kolumn logoData, logoContentType w channels.
- * Uruchom lokalnie (gdzie masz static/ po logos:download:akpa), potem deploy – produkcja będzie serwować z bazy.
+ * Ustawia logoUrl w channels na /logos/akpa/{externalId} dla plików z static/logos/akpa/.
  * Uruchomienie: DATABASE_URL=... npx tsx src/scripts/sync-logos-static-to-db.ts
  */
 import { PrismaClient } from '@prisma/client';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const prisma = new PrismaClient();
 const STATIC_DIR = join(process.cwd(), 'static', 'logos', 'akpa');
-const EXT = ['png', 'jpg', 'jpeg', 'svg'] as const;
-const MIME: Record<string, string> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  svg: 'image/svg+xml',
-};
 
 async function main() {
   let entries: string[];
@@ -28,7 +20,9 @@ async function main() {
   const byExternalId = new Map<string, { ext: string }>();
   for (const e of entries) {
     const match = e.match(/^(akpa_[a-zA-Z0-9_]+)\.(png|jpg|jpeg|svg)$/i);
-    if (match) byExternalId.set(match[1], { ext: match[2].toLowerCase() });
+    const id = match?.[1];
+    const ext = match?.[2];
+    if (id && ext) byExternalId.set(id, { ext: ext.toLowerCase() });
   }
   if (byExternalId.size === 0) {
     console.error('Brak plików akpa_*.png/jpg/svg w', STATIC_DIR);
@@ -36,14 +30,11 @@ async function main() {
   }
   console.log('Znaleziono', byExternalId.size, 'plików logo. Zapis do bazy...\n');
   let ok = 0;
-  for (const [externalId, { ext }] of byExternalId) {
-    const filePath = join(STATIC_DIR, `${externalId}.${ext}`);
+  for (const [externalId] of byExternalId) {
     try {
-      const body = await readFile(filePath);
-      const logoContentType = MIME[ext] ?? 'image/png';
       await prisma.channel.updateMany({
         where: { externalId },
-        data: { logoUrl: `/logos/akpa/${externalId}`, logoData: body, logoContentType },
+        data: { logoUrl: `/logos/akpa/${externalId}` },
       });
       const count = await prisma.channel.count({ where: { externalId } });
       if (count > 0) {

@@ -8,6 +8,7 @@ import {
   pruneDisallowedChannels,
 } from '../services/iptv-org-importer';
 import { importAkpaEpg } from '../services/akpa-importer';
+import { syncAkpaLogosToDb } from '../services/sync-akpa-logos-to-db.service';
 
 export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
   const forceIptv = env.EPG_SOURCE === 'iptv' || process.env.EPG_SOURCE === 'iptv';
@@ -76,6 +77,16 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
         }
         await runSelectedImport(app);
         app.log.info('Initial EPG import finished successfully.');
+        // Po imporcie AKPA: uzupełnij logoData w bazie (w tle), żeby GET /logos/akpa zwracał z bazy
+        if (useAkpa) {
+          setImmediate(async () => {
+            try {
+              await syncAkpaLogosToDb(app.prisma, app.log);
+            } catch (err) {
+              app.log.warn({ err }, 'Sync logotypów AKPA do bazy zakończony błędem');
+            }
+          });
+        }
       } catch (error) {
         app.log.error(
           {
