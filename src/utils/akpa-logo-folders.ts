@@ -39,10 +39,21 @@ function normalizeNoSpaces(s: string): string {
   return normalize(s).replace(/\s/g, '');
 }
 
-/** Kandydat na nazwę folderu AKPA z nazwy kanału (do fallback gdy brak w mapie i lista folderów pusta). */
+/** Jeden kandydat na nazwę folderu AKPA (do fallback). */
 export function channelNameToFolderCandidate(channelName: string): string | null {
   const n = normalize(channelName);
   return n || null;
+}
+
+/** Wszystkie warianty nazwy folderu do próby (np. "13 ulica" → ["13 ulica", "13-ulica", "13ulica"]). */
+export function channelNameToFolderCandidates(channelName: string): string[] {
+  const n = normalize(channelName);
+  if (!n) return [];
+  const out = new Set<string>();
+  out.add(n);
+  out.add(n.replace(/\s+/g, '-'));
+  out.add(n.replace(/\s+/g, ''));
+  return [...out];
 }
 
 /**
