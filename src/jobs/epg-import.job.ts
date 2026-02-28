@@ -79,6 +79,17 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
         app.log.info('Initial EPG import finished successfully.');
         // Po imporcie AKPA: uzupełnij logoData w bazie (w tle), żeby GET /logos/akpa zwracał z bazy
         if (useAkpa) {
+          const DEFAULT_AKPA_LOGOS_BASE = 'https://logotypy.akpa.pl/logotypy-tv';
+          const DEFAULT_AKPA_LOGOS_USER = 'logotypy_tv';
+          const DEFAULT_AKPA_LOGOS_PASSWORD = 'logos_2024@';
+          const logosBase = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? DEFAULT_AKPA_LOGOS_BASE).trim();
+          const logosUser = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? DEFAULT_AKPA_LOGOS_USER).trim();
+          const logosPassword = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? DEFAULT_AKPA_LOGOS_PASSWORD).trim();
+          if (!logosBase || !logosUser || !logosPassword) {
+            app.log.warn(
+              'AKPA_LOGOS_BASE_URL / USER / PASSWORD nie ustawione – logotypy nie będą w bazie. Ustaw te zmienne na produkcji i zrestartuj (sync wypełni logoData po starcie).',
+            );
+          }
           setImmediate(async () => {
             try {
               await syncAkpaLogosToDb(app.prisma, app.log);

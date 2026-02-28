@@ -1,19 +1,19 @@
 import { env } from '../config/env';
 
 /**
- * Mapowanie logo kanału: z bazy lub dla kanałów AKPA ścieżka /logos/akpa/{externalId}.
- * Dzięki temu każdy kanał AKPA ma logo w API nawet gdy logoUrl w DB jest null.
+ * Mapowanie logo kanału: każdy kanał AKPA ma URL /logos/akpa/{externalId} (logotypy w bazie w logoData).
+ * Dla innych źródeł – logoUrl z bazy lub null.
  */
 export function resolveChannelLogoUrl(channel: {
   externalId: string;
   logoUrl?: string | null;
 }): string | null {
-  const fromDb = channel.logoUrl != null ? String(channel.logoUrl).trim() : '';
-  if (fromDb !== '') {
-    return fromDb;
-  }
   const extId = String(channel.externalId ?? '');
-  return extId.startsWith('akpa_') ? `/logos/akpa/${extId}` : null;
+  if (extId.startsWith('akpa_')) {
+    return `/logos/akpa/${extId}`;
+  }
+  const fromDb = channel.logoUrl != null ? String(channel.logoUrl).trim() : '';
+  return fromDb !== '' ? fromDb : null;
 }
 
 /**

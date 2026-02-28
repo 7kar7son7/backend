@@ -163,6 +163,20 @@ EPG_GRAB_WORKDIR=
 
 ---
 
+## 🖼️ LOGOTYPY KANAŁÓW (AKPA)
+
+Gdy używasz EPG z AKPA (`AKPA_API_TOKEN`), logotypy są serwowane z bazy (`GET /logos/akpa/:id`).  
+**Bez poniższych zmiennych** sync logotypów jest pomijany, w bazie nie ma `logoData` i **w aplikacji widać inicjały zamiast logo** (404 na każdy `/logos/akpa/*`).
+
+```bash
+AKPA_LOGOS_BASE_URL=https://logotypy.akpa.pl/logotypy-tv
+AKPA_LOGOS_USER=logotypy_tv
+AKPA_LOGOS_PASSWORD=logos_2024@
+```
+**Opis:** Po imporcie EPG backend uruchamia w tle synchronizację logotypów z AKPA do bazy. Ustaw te zmienne na produkcji (np. w Branchly/Railway), zrestartuj aplikację – przy następnym imporcie EPG (start lub cron) sync wypełni `logoData` i logotypy zaczną się wyświetlać.
+
+---
+
 ## 🔔 POWIADOMIENIA (FCM)
 
 ```bash

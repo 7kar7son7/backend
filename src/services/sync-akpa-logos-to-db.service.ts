@@ -13,6 +13,10 @@ import {
   findBestFolder,
 } from '../utils/akpa-logo-folders';
 
+const DEFAULT_AKPA_LOGOS_BASE = 'https://logotypy.akpa.pl/logotypy-tv';
+const DEFAULT_AKPA_LOGOS_USER = 'logotypy_tv';
+const DEFAULT_AKPA_LOGOS_PASSWORD = 'logos_2024@';
+
 export async function syncAkpaLogosToDb(
   prisma: PrismaClient,
   logger: FastifyBaseLogger,
@@ -20,17 +24,17 @@ export async function syncAkpaLogosToDb(
   const baseUrl = (
     env.AKPA_LOGOS_BASE_URL ??
     process.env.AKPA_LOGOS_BASE_URL ??
-    ''
+    DEFAULT_AKPA_LOGOS_BASE
   )
     .trim()
     .replace(/\/+$/, '');
-  const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? '').trim();
-  const password = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? '').trim();
+  const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? DEFAULT_AKPA_LOGOS_USER).trim();
+  const password = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? DEFAULT_AKPA_LOGOS_PASSWORD).trim();
 
   if (!baseUrl || !user || !password) {
-    logger.info(
+    logger.warn(
       { hasBase: !!baseUrl, hasUser: !!user, hasPassword: !!password },
-      'sync-akpa-logos: pominięto (brak AKPA_LOGOS_* w env)',
+      'sync-akpa-logos: pominięto – brak AKPA_LOGOS_BASE_URL / USER / PASSWORD. Na produkcji ustaw te zmienne, żeby logotypy się wypełniły po imporcie EPG.',
     );
     return { synced: 0, failed: 0 };
   }
