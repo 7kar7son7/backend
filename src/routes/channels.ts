@@ -62,13 +62,13 @@ export default async function channelsRoutes(app: FastifyInstance) {
 
     const formattedChannels = channels.map((channel) => {
       const base = {
-        id: channel.id,
-        externalId: channel.externalId,
-        name: channel.name,
-        description: channel.description,
-        logoUrl: channel.logoUrl,
-        category: channel.category,
-        countryCode: channel.countryCode,
+        id: String(channel.id),
+        externalId: String(channel.externalId),
+        name: String(channel.name),
+        description: channel.description != null ? String(channel.description) : null,
+        logoUrl: channel.logoUrl != null ? String(channel.logoUrl) : null,
+        category: channel.category != null ? String(channel.category) : null,
+        countryCode: channel.countryCode != null ? String(channel.countryCode) : null,
       };
 
       if (!includePrograms) {
