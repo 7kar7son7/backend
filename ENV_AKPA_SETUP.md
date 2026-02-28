@@ -23,6 +23,10 @@ AKPA_API_TOKEN=q5h9PB50WYL5x6G0tjiVN77hTAGfDwnDLzoXpP8zVjDrzeXz1ZNnJ57odNrv6rcM
 
 # Jawnie ustaw źródło na AKPA (jeśli masz też EPG_SOURCE_URL, żeby nie użyć IPTV)
 EPG_SOURCE=akpa
+
+# Opcjonalnie: URL do ramówki (programów). Bez tego import ma 0 programów – tylko lista kanałów.
+# Zapytaj AKPA (serwistv@akpa.pl), jaki endpoint zwraca programy (np. /api/v1/programs lub /schedule).
+# AKPA_PROGRAMS_URL=https://api-epg.akpa.pl/api/v1/programs
 ```
 
 ### Import przy starcie (zalecane)

@@ -9,10 +9,11 @@ if (!url) {
   console.error('Ustaw DATABASE_URL (np. w .env lub: $env:DATABASE_URL="postgresql://...")');
   process.exit(1);
 }
+const databaseUrl: string = url;
 
 async function main() {
   const prisma = new PrismaClient({
-    datasources: { db: { url } },
+    datasources: { db: { url: databaseUrl } },
   });
 
   try {

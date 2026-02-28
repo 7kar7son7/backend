@@ -33,11 +33,19 @@ const programsQuerySchema = z.object({
     .transform((value) => (value ? new Date(value) : undefined)),
 });
 
+function resolveLogoUrl(channel: { externalId: string; logoUrl: string | null }): string | null {
+  if (channel.logoUrl != null && String(channel.logoUrl).trim() !== '') {
+    return String(channel.logoUrl);
+  }
+  const extId = String(channel.externalId);
+  return extId.startsWith('akpa_') ? `/logos/akpa/${extId}` : null;
+}
+
 export default async function channelsRoutes(app: FastifyInstance) {
   const channelService = new ChannelService(app.prisma);
   const programService = new ProgramService(app.prisma);
 
-  app.get('/', async (request) => {
+  app.get('/', async (request, reply) => {
     const query = listQuerySchema.parse(request.query);
     const includePrograms = query.includePrograms === true ? true : undefined;
     const filters: { search?: string; includePrograms?: boolean; limit?: number; offset?: number } = {};
@@ -61,12 +69,13 @@ export default async function channelsRoutes(app: FastifyInstance) {
     );
 
     const formattedChannels = channels.map((channel) => {
+      const resolvedLogoUrl = resolveLogoUrl(channel);
       const base = {
         id: String(channel.id),
         externalId: String(channel.externalId),
         name: String(channel.name),
         description: channel.description != null ? String(channel.description) : null,
-        logoUrl: channel.logoUrl != null ? String(channel.logoUrl) : null,
+        logoUrl: resolvedLogoUrl,
         category: channel.category != null ? String(channel.category) : null,
         countryCode: channel.countryCode != null ? String(channel.countryCode) : null,
       };
@@ -75,26 +84,29 @@ export default async function channelsRoutes(app: FastifyInstance) {
         return base;
       }
 
-      return {
-        ...base,
-        programs: (('programs' in channel && Array.isArray(channel.programs)) ? channel.programs : []).map((program: any) => ({
-          id: program.id,
-          title: program.title,
-          channelId: program.channelId,
-          channelName: channel.name,
-          channelLogoUrl: channel.logoUrl ?? null,
-          description: program.description,
-          seasonNumber: program.seasonNumber,
-          episodeNumber: program.episodeNumber,
-          startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
-          endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-          imageUrl: program.imageUrl ?? channel.logoUrl ?? null,
-          tags: program.tags ?? [],
-        })),
-      };
+      const programs = ('programs' in channel && Array.isArray(channel.programs)) ? channel.programs : [];
+      const programsList = programs.map((program: any) => ({
+        id: String(program.id),
+        title: String(program.title),
+        channelId: String(program.channelId),
+        channelName: String(channel.name),
+        channelLogoUrl: resolvedLogoUrl,
+        description: program.description != null ? String(program.description) : null,
+        seasonNumber: program.seasonNumber ?? null,
+        episodeNumber: program.episodeNumber ?? null,
+        startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
+        endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
+        imageUrl: program.imageUrl != null ? String(program.imageUrl) : resolvedLogoUrl,
+        tags: Array.isArray(program.tags) ? program.tags.map((t: unknown) => String(t)) : [],
+      }));
+      // Gdy 0 programów – nie dodawaj klucza "programs", żeby format był jak GET bez includePrograms (działa w Ustawieniach).
+      if (programsList.length === 0) {
+        return base;
+      }
+      return { ...base, programs: programsList };
     });
 
-    return { data: formattedChannels };
+    return reply.type('application/json').send({ data: formattedChannels });
   });
 
   app.get('/:channelId', async (request, reply) => {
@@ -105,7 +117,8 @@ export default async function channelsRoutes(app: FastifyInstance) {
       return reply.notFound('Channel not found');
     }
 
-    return { data: channel };
+    const logoUrl = resolveLogoUrl(channel);
+    return { data: { ...channel, logoUrl } };
   });
 
   app.get('/:channelId/programs', async (request, reply) => {
@@ -130,21 +143,22 @@ export default async function channelsRoutes(app: FastifyInstance) {
       filter,
     );
 
+    const logoUrl = resolveLogoUrl(channel);
     return {
       data: {
-        channel,
+        channel: { ...channel, logoUrl },
         programs: programs.map((program) => ({
           id: program.id,
           title: program.title,
           channelId: program.channelId,
           channelName: channel.name,
-          channelLogoUrl: channel.logoUrl ?? null,
+          channelLogoUrl: logoUrl,
           description: program.description ?? null,
           seasonNumber: program.seasonNumber ?? null,
           episodeNumber: program.episodeNumber ?? null,
           startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
           endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-          imageUrl: program.imageUrl ?? channel.logoUrl ?? null,
+          imageUrl: program.imageUrl ?? logoUrl ?? null,
           tags: program.tags ?? [],
         })),
       },

@@ -35,6 +35,8 @@ const envSchema = z.object({
   AKPA_AUTH_TYPE: z.enum(['Bearer', 'Token', 'X-Api-Key']).optional(),
   /** Gdy ustawione (np. "token"), token jest dodawany do URL: ?token=... (dla API wymagających auth w query) */
   AKPA_AUTH_QUERY_PARAM: z.string().optional().transform((s) => s?.trim() || undefined),
+  /** Opcjonalny URL do ramówki (programów). Np. https://api-epg.akpa.pl/api/v1/programs – zapytaj AKPA o endpoint. */
+  AKPA_PROGRAMS_URL: z.string().optional().transform((s) => s?.trim() || undefined),
   AKPA_LOGOS_BASE_URL: z.string().optional(),
   AKPA_LOGOS_USER: z.string().optional(),
   AKPA_LOGOS_PASSWORD: z.string().optional(),

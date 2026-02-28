@@ -5,6 +5,10 @@ dist/
 *.log
 tmp/
 tmp-*
+static/logos/
+akpa-*-listing.html
+akpa-channels-response.json
+akpa-epg-sample.txt
 .DS_Store
 
 

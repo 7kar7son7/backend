@@ -2,10 +2,12 @@ import type { FastifyBaseLogger } from 'fastify';
 import { PrismaClient } from '@prisma/client';
 
 import { env } from '../config/env';
-import { EpgImportService, type EpgChannel, type EpgFeed } from './epg-import.service';
+import { EpgImportService, type EpgChannel, type EpgFeed, type EpgProgram } from './epg-import.service';
 
 const DEFAULT_AKPA_API_URL = 'https://api-epg.akpa.pl/api/v1';
 const EXTERNAL_ID_PREFIX = 'akpa_';
+const LOGO_FILES = ['logo.png', 'logo.jpg', 'logo.jpeg', 'image.png', 'image.jpg', 'logo.svg'];
+const LOGO_CONCURRENCY = 6;
 
 type AkpaChannelRaw = {
   id?: string | number;
@@ -13,6 +15,26 @@ type AkpaChannelRaw = {
   title?: string;
   slug?: string;
   description?: string;
+  programs?: unknown[];
+  schedule?: unknown[];
+  broadcasts?: unknown[];
+  events?: unknown[];
+  [key: string]: unknown;
+};
+
+type AkpaProgramRaw = {
+  id?: string | number;
+  title?: string;
+  description?: string;
+  start?: string;
+  end?: string;
+  channel_id?: string | number;
+  channelId?: string | number;
+  channel_slug?: string;
+  season?: number;
+  episode?: number;
+  image?: string;
+  tags?: unknown[];
   [key: string]: unknown;
 };
 
@@ -174,9 +196,284 @@ async function fetchChannelsWithAuthRetry(
   );
 }
 
+function toEpgProgram(raw: AkpaProgramRaw): EpgProgram | null {
+  const id = raw.id != null ? String(raw.id) : undefined;
+  const title = raw.title != null ? String(raw.title) : undefined;
+  const start =
+    raw.start != null
+      ? String(raw.start)
+      : (raw as Record<string, unknown>).start_time != null
+        ? String((raw as Record<string, unknown>).start_time)
+        : (raw as Record<string, unknown>).startDate != null
+          ? String((raw as Record<string, unknown>).startDate)
+          : (raw as Record<string, unknown>).starts_at != null
+            ? String((raw as Record<string, unknown>).starts_at)
+            : undefined;
+  if (!id || !title || !start) return null;
+  const startsAt = new Date(start);
+  if (Number.isNaN(startsAt.getTime())) return null;
+  const endRaw =
+    raw.end ??
+    (raw as Record<string, unknown>).end_time ??
+    (raw as Record<string, unknown>).endDate ??
+    (raw as Record<string, unknown>).ends_at;
+  const end = endRaw != null ? String(endRaw) : undefined;
+  let endDate: Date | undefined;
+  if (end) {
+    endDate = new Date(end);
+    if (Number.isNaN(endDate.getTime())) endDate = undefined;
+  }
+  const prog: EpgProgram = { id, title, start };
+  const desc =
+    raw.description ??
+    (raw as Record<string, unknown>).desc ??
+    (raw as Record<string, unknown>).synopsis ??
+    (raw as Record<string, unknown>).summary ??
+    (raw as Record<string, unknown>).longDescription;
+  if (desc != null && String(desc).trim()) {
+    prog.description = String(desc).trim();
+  } else {
+    const r = raw as Record<string, unknown>;
+    const genre = r.genre != null ? String(r.genre).trim() : '';
+    const subgenre = r.subgenre != null ? String(r.subgenre).trim() : '';
+    const year = r.productionYear != null ? String(r.productionYear).trim() : '';
+    const countries = Array.isArray(r.productionCountries)
+      ? (r.productionCountries as string[]).map((c) => String(c).trim()).filter(Boolean)
+      : [];
+    const parts: string[] = [];
+    if (genre) parts.push(genre);
+    if (subgenre) parts.push(subgenre);
+    if (year) parts.push(`(${year})`);
+    if (countries.length) parts.push(countries.join(', '));
+    if (parts.length) prog.description = parts.join(' ');
+  }
+  if (endDate != null) prog.end = endDate.toISOString();
+  if (typeof raw.season === 'number') prog.season = raw.season;
+  if (typeof raw.episode === 'number') prog.episode = raw.episode;
+  if (raw.image != null) prog.image = String(raw.image);
+  const tagList = Array.isArray(raw.tags) ? raw.tags.map((t) => String(t)) : [];
+  const r = raw as Record<string, unknown>;
+  if (r.genre != null && String(r.genre).trim()) tagList.push(String(r.genre).trim());
+  if (r.formalCategory != null && String(r.formalCategory).trim()) tagList.push(String(r.formalCategory).trim());
+  if (Array.isArray(r.keywords)) {
+    for (const kw of r.keywords as Array<{ keyword?: string; humanReadable?: string }>) {
+      if (kw?.keyword && String(kw.keyword).trim() && kw.humanReadable === 'yes') tagList.push(String(kw.keyword).trim());
+    }
+  }
+  if (tagList.length) prog.tags = [...new Set(tagList)];
+  return prog;
+}
+
+/** Programy zagnieżdżone w obiekcie kanału (np. channel.programs, channel.schedule). */
+function parseProgramsFromChannel(raw: AkpaChannelRaw): EpgProgram[] {
+  const list =
+    Array.isArray(raw.programs)
+      ? raw.programs
+      : Array.isArray(raw.schedule)
+        ? raw.schedule
+        : Array.isArray(raw.broadcasts)
+          ? raw.broadcasts
+          : Array.isArray(raw.events)
+            ? raw.events
+            : [];
+  const out: EpgProgram[] = [];
+  for (const item of list) {
+    if (item && typeof item === 'object') {
+      const prog = toEpgProgram(item as AkpaProgramRaw);
+      if (prog) out.push(prog);
+    }
+  }
+  return out;
+}
+
+function getChannelKeyFromProgram(raw: AkpaProgramRaw): string | null {
+  const v = raw.channel_id ?? raw.channelId ?? raw.channel_slug;
+  if (v != null) return String(v);
+  return null;
+}
+
+async function logoExists(baseUrl: string, authHeader: string, pathSegment: string): Promise<boolean> {
+  const segment = pathSegment.trim();
+  if (!segment) return false;
+  for (const fileName of LOGO_FILES) {
+    const url = `${baseUrl.replace(/\/+$/, '')}/${encodeURIComponent(segment)}/${fileName}`;
+    try {
+      const res = await fetch(url, { method: 'GET', headers: { Authorization: authHeader } });
+      if (res.ok && res.body) return true;
+    } catch {
+      continue;
+    }
+  }
+  return false;
+}
+
+function logoSlugCandidates(raw: AkpaChannelRaw): string[] {
+  const name = getChannelName(raw);
+  const short = (raw as Record<string, unknown>).short_name;
+  const candidates: string[] = [];
+  if (typeof short === 'string' && short.trim()) candidates.push(short.trim());
+  if (name.trim()) {
+    candidates.push(name.trim());
+    candidates.push(name.replace(/\s+/g, '').trim());
+    candidates.push(name.toLowerCase().trim());
+    candidates.push(name.replace(/\s+/g, '').toLowerCase().trim());
+  }
+  return [...new Set(candidates)].filter(Boolean);
+}
+
+async function resolveLogoSlug(
+  raw: AkpaChannelRaw,
+  baseUrl: string,
+  authHeader: string,
+  logger: FastifyBaseLogger,
+): Promise<string> {
+  const fallback = getChannelName(raw).toLowerCase().trim() || 'unknown';
+  for (const slug of logoSlugCandidates(raw)) {
+    if (await logoExists(baseUrl, authHeader, slug)) return slug;
+  }
+  return fallback;
+}
+
+async function resolveLogoSlugsForChannels(
+  rawChannels: AkpaChannelRaw[],
+  logger: FastifyBaseLogger,
+): Promise<Map<string, string>> {
+  const baseUrl = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? '').replace(/\/+$/, '');
+  const user = env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER;
+  const password = env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD;
+  if (!baseUrl || !user || !password) {
+    logger.info('AKPA: brak AKPA_LOGOS_BASE_URL/USER/PASSWORD – pomijam rozwiązywanie logotypów');
+    return new Map();
+  }
+  const authHeader = 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64');
+  const byId = new Map<string, string>();
+  for (let i = 0; i < rawChannels.length; i += LOGO_CONCURRENCY) {
+    const batch = rawChannels.slice(i, i + LOGO_CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(async (raw) => {
+        const apiId = getChannelId(raw);
+        const slug = await resolveLogoSlug(raw, baseUrl, authHeader, logger);
+        return { apiId, slug } as const;
+      }),
+    );
+    for (const { apiId, slug } of results) byId.set(apiId, slug);
+  }
+  const newBase = (env.AKPA_LOGOS_NEW_BASE_URL ?? process.env.AKPA_LOGOS_NEW_BASE_URL ?? '').replace(/\/+$/, '');
+  const newUser = env.AKPA_LOGOS_NEW_USER ?? process.env.AKPA_LOGOS_NEW_USER;
+  const newPassword = env.AKPA_LOGOS_NEW_PASSWORD ?? process.env.AKPA_LOGOS_NEW_PASSWORD;
+  if (newBase && newUser && newPassword) {
+    const newAuth = 'Basic ' + Buffer.from(`${newUser}:${newPassword}`).toString('base64');
+    for (const [apiId, slug] of byId) {
+      const raw = rawChannels.find((r) => getChannelId(r) === apiId);
+      if (!raw) continue;
+      if (await logoExists(newBase, newAuth, slug)) continue;
+      const alt = await resolveLogoSlug(raw, newBase, newAuth, logger);
+      if (alt !== slug && (await logoExists(newBase, newAuth, alt))) byId.set(apiId, alt);
+    }
+  }
+  logger.info({ resolved: byId.size, total: rawChannels.length }, 'AKPA: rozwiązano logotypy kanałów');
+  return byId;
+}
+
+/** Odpowiedź GET /epg?ch=1&ch=2&... – channels[].days[].schedule[]. */
+type AkpaEpgChannel = {
+  channelId?: number;
+  channelName?: string;
+  days?: Array<{ date?: string; schedule?: AkpaProgramRaw[] }>;
+};
+
+/**
+ * Pobiera ramówkę z endpointu AKPA GET /epg?ch=id1&ch=id2&... (wymaga nagłówka Accept: application/json).
+ * Zwraca mapę: channelId (string) -> EpgProgram[].
+ */
+async function fetchEpgByChannelIds(
+  baseUrl: string,
+  channelIds: string[],
+  token: string,
+  authType: (typeof AUTH_TYPES)[number],
+  logger: FastifyBaseLogger,
+): Promise<Map<string, EpgProgram[]>> {
+  if (channelIds.length === 0) return new Map();
+  const epgUrl = `${baseUrl.replace(/\/+$/, '')}/epg?${channelIds.map((id) => `ch=${encodeURIComponent(id)}`).join('&')}`;
+  const headers = { ...buildAuthHeaders(token.trim(), authType), Accept: 'application/json' };
+  const res = await fetch(epgUrl, { method: 'GET', headers });
+  if (!res.ok) {
+    const text = await res.text();
+    logger.warn({ status: res.status, url: epgUrl.slice(0, 80), body: text.slice(0, 200) }, 'AKPA EPG error');
+    return new Map();
+  }
+  const json = (await res.json()) as unknown;
+  const channelsList =
+    json && typeof json === 'object' && Array.isArray((json as Record<string, unknown>).channels)
+      ? ((json as Record<string, unknown>).channels as AkpaEpgChannel[])
+      : [];
+  const byChannel = new Map<string, EpgProgram[]>();
+  for (const ch of channelsList) {
+    const cid = ch.channelId != null ? String(ch.channelId) : null;
+    if (!cid) continue;
+    const programs: EpgProgram[] = [];
+    for (const day of ch.days ?? []) {
+      for (const item of day.schedule ?? []) {
+        if (item && typeof item === 'object') {
+          const prog = toEpgProgram(item as AkpaProgramRaw);
+          if (prog) programs.push(prog);
+        }
+      }
+    }
+    if (programs.length) byChannel.set(cid, programs);
+  }
+  const total = [...byChannel.values()].reduce((s, p) => s + p.length, 0);
+  logger.info({ channelsWithSchedule: byChannel.size, totalPrograms: total }, 'AKPA: pobrano ramówkę z /epg');
+  return byChannel;
+}
+
+/**
+ * Pobiera programy z opcjonalnego endpointu AKPA (AKPA_PROGRAMS_URL).
+ * Zwraca mapę: klucz kanału (api id) -> lista EpgProgram.
+ */
+async function fetchProgramsByChannel(
+  programsUrl: string,
+  token: string,
+  authType: (typeof AUTH_TYPES)[number],
+  logger: FastifyBaseLogger,
+): Promise<Map<string, EpgProgram[]>> {
+  const headers = buildAuthHeaders(token.trim(), authType);
+  const res = await fetch(programsUrl, { method: 'GET', headers });
+  if (!res.ok) {
+    if (res.status === 404) {
+      logger.info('AKPA: endpoint programów nie istnieje (404) – ramówka niedostępna z tego API.');
+      return new Map();
+    }
+    const text = await res.text();
+    logger.warn({ status: res.status, url: programsUrl, body: text.slice(0, 300) }, 'AKPA programs endpoint error');
+    return new Map();
+  }
+  const json = (await res.json()) as unknown;
+  let list: AkpaProgramRaw[] = [];
+  if (Array.isArray(json)) list = json as AkpaProgramRaw[];
+  else if (json && typeof json === 'object') {
+    const data = (json as Record<string, unknown>).data;
+    const programs = (json as Record<string, unknown>).programs;
+    if (Array.isArray(data)) list = data as AkpaProgramRaw[];
+    else if (Array.isArray(programs)) list = programs as AkpaProgramRaw[];
+  }
+  const byChannel = new Map<string, EpgProgram[]>();
+  for (const raw of list) {
+    const key = getChannelKeyFromProgram(raw);
+    const prog = toEpgProgram(raw);
+    if (!key || !prog) continue;
+    const existing = byChannel.get(key) ?? [];
+    existing.push(prog);
+    byChannel.set(key, existing);
+  }
+  logger.info({ channelsWithPrograms: byChannel.size, totalPrograms: list.length }, 'AKPA: pobrano programy');
+  return byChannel;
+}
+
 /**
  * Import kanałów z API AKPA (api-epg.akpa.pl).
  * Tylko dodaje/aktualizuje kanały z AKPA – nie usuwa istniejących kanałów z innych źródeł.
+ * Programy (ramówka) – jeśli AKPA udostępnia endpoint, ustaw AKPA_PROGRAMS_URL (zapytaj AKPA o URL).
  */
 export async function importAkpaEpg(
   prisma: PrismaClient,
@@ -194,17 +491,28 @@ export async function importAkpaEpg(
 
   logger.info(`Import EPG z AKPA (${baseUrl})`);
 
-  const { channels: rawChannels } = await fetchChannelsWithAuthRetry(baseUrl, token, logger);
+  const { channels: rawChannels, authType } = await fetchChannelsWithAuthRetry(baseUrl, token, logger);
   logger.info(`Pobrano ${rawChannels.length} kanałów z API AKPA`);
+
+  const channelIds = rawChannels.map((r) => getChannelId(r));
+  const epgByChannel = await fetchEpgByChannelIds(baseUrl, channelIds, token, authType, logger);
+
+  const programsUrl = env.AKPA_PROGRAMS_URL ?? process.env.AKPA_PROGRAMS_URL;
+  const programsByChannel = programsUrl
+    ? await fetchProgramsByChannel(programsUrl, token, authType, logger)
+    : new Map<string, EpgProgram[]>();
 
   const channels: EpgChannel[] = rawChannels.map((raw) => {
     const apiId = getChannelId(raw);
     const externalId = EXTERNAL_ID_PREFIX + apiId;
     const name = getChannelName(raw);
-    const logoSlug = name.toLowerCase().trim();
-    const logo = `/epg/logos/akpa/${encodeURIComponent(logoSlug)}`;
+    const logo = `/logos/akpa/${externalId}`;
     const description =
       typeof raw.description === 'string' ? raw.description.trim() : undefined;
+    const fromChannel = parseProgramsFromChannel(raw);
+    const fromEpg = epgByChannel.get(apiId) ?? epgByChannel.get(String(raw.id)) ?? [];
+    const fromUrl = programsByChannel.get(apiId) ?? programsByChannel.get(String(raw.id)) ?? programsByChannel.get(name) ?? [];
+    const programs = fromChannel.length > 0 ? fromChannel : fromEpg.length > 0 ? fromEpg : fromUrl;
 
     return {
       id: externalId,
@@ -212,7 +520,7 @@ export async function importAkpaEpg(
       ...(description ? { description } : {}),
       logo,
       countryCode: 'PL',
-      programs: [],
+      programs,
     };
   });
 
@@ -224,6 +532,6 @@ export async function importAkpaEpg(
   const service = new EpgImportService(prisma, logger);
   const result = await service.importFeed(feed);
 
-  logger.info(`AKPA: zaimportowano ${result.channelCount} kanałów`);
+  logger.info(`AKPA: zaimportowano ${result.channelCount} kanałów, ${result.programCount} programów`);
   return result;
 }
