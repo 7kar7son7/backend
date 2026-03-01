@@ -11,7 +11,6 @@ import { startReminderJob } from './jobs/reminder.job';
 import { startEpgImportJob } from './jobs/epg-import.job';
 import { startDailyReminderJob } from './jobs/daily-reminder.job';
 import { startProgramStartReminderJob } from './jobs/event-notification.job';
-import { syncAkpaLogosToDb } from './services/sync-akpa-logos-to-db.service';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const loggerOptions: FastifyServerOptions['logger'] =
@@ -54,11 +53,6 @@ export async function buildApp(): Promise<FastifyInstance> {
   let startSoonTask: ScheduledTask | null = null;
 
   app.addHook('onReady', async () => {
-    // Sync logotypów AKPA do bazy (w tle przy każdym starcie/deployu – nie blokuje startu)
-    void syncAkpaLogosToDb(app.prisma, app.log).catch((err) => {
-      app.log.warn(err, 'sync-akpa-logos: błąd w tle');
-    });
-
     reminderTask = startReminderJob(app);
     if (reminderTask) {
       app.log.info('Reminder job started');

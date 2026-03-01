@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 
 import { env } from '../config/env';
 import { AKPA_LOGOS_DEFAULTS } from '../config/akpa-logos-defaults';
+import { fetchAndSaveAkpaLogoForChannel } from '../services/sync-akpa-logos-to-db.service';
 
 function safeChannelId(id: string): boolean {
   return /^akpa_[a-zA-Z0-9_]+$/.test(id) && id.length <= 128;
@@ -114,7 +115,7 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     });
   });
 
-  /** GET /logos/akpa/:channelId – jedyna rejestracja (w pluginie), serwowanie z bazy (encode hex). */
+  /** GET /logos/akpa/:channelId – z bazy; gdy brak logoData, próba pobrania z AKPA i zapis do bazy (fallback). */
   app.get('/akpa/:channelId', async (request, reply) => {
     const channelId = (request.params as { channelId: string }).channelId;
     if (!channelId || !safeChannelId(channelId)) {
@@ -131,13 +132,17 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
       Prisma.sql`SELECT encode("logoData", 'hex') as hex_data, "logoContentType" as logo_content_type FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
     );
     const row = hexRow[0];
-    if (!row) {
-      return reply.code(404).send({ error: 'Logo not found' });
-    }
-    const hexVal = rowVal<string>(row, 'hex_data', 'hex_data');
-    const ctVal = rowVal<unknown>(row, 'logo_content_type', 'logo_content_type');
-    const hexStr = hexVal == null ? '' : Buffer.isBuffer(hexVal) ? hexVal.toString('utf8') : String(hexVal).trim();
+    let hexVal = row ? rowVal<string>(row, 'hex_data', 'hex_data') : null;
+    let ctVal = row ? rowVal<unknown>(row, 'logo_content_type', 'logo_content_type') : null;
+    let hexStr = hexVal == null ? '' : Buffer.isBuffer(hexVal) ? hexVal.toString('utf8') : String(hexVal).trim();
     if (hexStr.length === 0) {
+      const fetched = await fetchAndSaveAkpaLogoForChannel(app.prisma, app.log, channelId);
+      if (fetched) {
+        return reply
+          .header('Cache-Control', 'public, max-age=86400')
+          .type(fetched.contentType)
+          .send(fetched.body);
+      }
       return reply.code(404).send({ error: 'Logo not found' });
     }
     const buf = Buffer.from(hexStr, 'hex');
