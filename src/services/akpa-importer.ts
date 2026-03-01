@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { PrismaClient } from '@prisma/client';
 
 import { env } from '../config/env';
+import { AKPA_LOGOS_DEFAULTS } from '../config/akpa-logos-defaults';
 import { EpgImportService, type EpgChannel, type EpgFeed, type EpgProgram } from './epg-import.service';
 
 const DEFAULT_AKPA_API_URL = 'https://api-epg.akpa.pl/api/v1';
@@ -358,9 +359,9 @@ async function resolveLogoSlugsForChannels(
     );
     for (const { apiId, slug } of results) byId.set(apiId, slug);
   }
-  const newBase = (env.AKPA_LOGOS_NEW_BASE_URL ?? process.env.AKPA_LOGOS_NEW_BASE_URL ?? '').replace(/\/+$/, '');
-  const newUser = env.AKPA_LOGOS_NEW_USER ?? process.env.AKPA_LOGOS_NEW_USER;
-  const newPassword = env.AKPA_LOGOS_NEW_PASSWORD ?? process.env.AKPA_LOGOS_NEW_PASSWORD;
+  const newBase = (env.AKPA_LOGOS_NEW_BASE_URL ?? process.env.AKPA_LOGOS_NEW_BASE_URL ?? AKPA_LOGOS_DEFAULTS.NEW_BASE_URL).replace(/\/+$/, '');
+  const newUser = env.AKPA_LOGOS_NEW_USER ?? process.env.AKPA_LOGOS_NEW_USER ?? AKPA_LOGOS_DEFAULTS.NEW_USER;
+  const newPassword = env.AKPA_LOGOS_NEW_PASSWORD ?? process.env.AKPA_LOGOS_NEW_PASSWORD ?? AKPA_LOGOS_DEFAULTS.NEW_PASSWORD;
   if (newBase && newUser && newPassword) {
     const newAuth = 'Basic ' + Buffer.from(`${newUser}:${newPassword}`).toString('base64');
     for (const [apiId, slug] of byId) {

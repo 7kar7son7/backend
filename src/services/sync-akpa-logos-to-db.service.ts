@@ -6,6 +6,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
 
 import { env } from '../config/env';
+import { AKPA_LOGOS_DEFAULTS } from '../config/akpa-logos-defaults';
 import { fetchLogoFromAkpaFolder } from './akpa-logo-fetcher';
 import {
   loadAkpaLogoFolderMap,
@@ -14,10 +15,6 @@ import {
   channelNameToFolderCandidate,
 } from '../utils/akpa-logo-folders';
 
-const DEFAULT_AKPA_LOGOS_BASE = 'https://logotypy.akpa.pl/logotypy-tv';
-const DEFAULT_AKPA_LOGOS_USER = 'logotypy_tv';
-const DEFAULT_AKPA_LOGOS_PASSWORD = 'logos_2024@';
-
 export async function syncAkpaLogosToDb(
   prisma: PrismaClient,
   logger: FastifyBaseLogger,
@@ -25,12 +22,12 @@ export async function syncAkpaLogosToDb(
   const baseUrl = (
     env.AKPA_LOGOS_BASE_URL ??
     process.env.AKPA_LOGOS_BASE_URL ??
-    DEFAULT_AKPA_LOGOS_BASE
+    AKPA_LOGOS_DEFAULTS.BASE_URL
   )
     .trim()
     .replace(/\/+$/, '');
-  const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? DEFAULT_AKPA_LOGOS_USER).trim();
-  const password = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? DEFAULT_AKPA_LOGOS_PASSWORD).trim();
+  const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? AKPA_LOGOS_DEFAULTS.USER).trim();
+  const password = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? AKPA_LOGOS_DEFAULTS.PASSWORD).trim();
 
   if (!baseUrl || !user || !password) {
     logger.warn(
@@ -62,12 +59,12 @@ export async function syncAkpaLogosToDb(
   const newBase = (
     env.AKPA_LOGOS_NEW_BASE_URL ??
     process.env.AKPA_LOGOS_NEW_BASE_URL ??
-    ''
+    AKPA_LOGOS_DEFAULTS.NEW_BASE_URL
   )
     .trim()
     .replace(/\/+$/, '');
-  const newUser = (env.AKPA_LOGOS_NEW_USER ?? process.env.AKPA_LOGOS_NEW_USER ?? '').trim();
-  const newPassword = (env.AKPA_LOGOS_NEW_PASSWORD ?? process.env.AKPA_LOGOS_NEW_PASSWORD ?? '').trim();
+  const newUser = (env.AKPA_LOGOS_NEW_USER ?? process.env.AKPA_LOGOS_NEW_USER ?? AKPA_LOGOS_DEFAULTS.NEW_USER).trim();
+  const newPassword = (env.AKPA_LOGOS_NEW_PASSWORD ?? process.env.AKPA_LOGOS_NEW_PASSWORD ?? AKPA_LOGOS_DEFAULTS.NEW_PASSWORD).trim();
   const newAuth =
     newBase && newUser && newPassword
       ? 'Basic ' + Buffer.from(`${newUser}:${newPassword}`).toString('base64')

@@ -6,6 +6,7 @@ import { pruneDisallowedChannels } from '../services/iptv-org-importer';
 import { importIptvOrgEpg } from '../services/iptv-org-importer';
 import { importAkpaEpg } from '../services/akpa-importer';
 import { env } from '../config/env';
+import { AKPA_LOGOS_DEFAULTS } from '../config/akpa-logos-defaults';
 
 async function runSelectedImport(app: FastifyInstance) {
   const forceIptv = env.EPG_SOURCE === 'iptv' || process.env.EPG_SOURCE === 'iptv';
@@ -91,9 +92,9 @@ const epgRoutes = fp(async (app: FastifyInstance) => {
     const slug = (request.params as { slug: string }).slug;
     if (!slug) return reply.code(400).send({ error: 'Missing slug' });
 
-    const baseUrl = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? '').replace(/\/+$/, '');
-    const user = env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER;
-    const password = env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD;
+    const baseUrl = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? AKPA_LOGOS_DEFAULTS.BASE_URL).replace(/\/+$/, '');
+    const user = env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? AKPA_LOGOS_DEFAULTS.USER;
+    const password = env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? AKPA_LOGOS_DEFAULTS.PASSWORD;
     const pathSegment = decodeURIComponent(slug);
 
     if (baseUrl && user && password) {
@@ -104,9 +105,9 @@ const epgRoutes = fp(async (app: FastifyInstance) => {
       }
     }
 
-    const newBase = (env.AKPA_LOGOS_NEW_BASE_URL ?? process.env.AKPA_LOGOS_NEW_BASE_URL ?? '').replace(/\/+$/, '');
-    const newUser = env.AKPA_LOGOS_NEW_USER ?? process.env.AKPA_LOGOS_NEW_USER;
-    const newPassword = env.AKPA_LOGOS_NEW_PASSWORD ?? process.env.AKPA_LOGOS_NEW_PASSWORD;
+    const newBase = (env.AKPA_LOGOS_NEW_BASE_URL ?? process.env.AKPA_LOGOS_NEW_BASE_URL ?? AKPA_LOGOS_DEFAULTS.NEW_BASE_URL).replace(/\/+$/, '');
+    const newUser = env.AKPA_LOGOS_NEW_USER ?? process.env.AKPA_LOGOS_NEW_USER ?? AKPA_LOGOS_DEFAULTS.NEW_USER;
+    const newPassword = env.AKPA_LOGOS_NEW_PASSWORD ?? process.env.AKPA_LOGOS_NEW_PASSWORD ?? AKPA_LOGOS_DEFAULTS.NEW_PASSWORD;
     if (newBase && newUser && newPassword) {
       const authHeader = 'Basic ' + Buffer.from(`${newUser}:${newPassword}`).toString('base64');
       const result = await fetchLogoFromBase(newBase, authHeader, pathSegment);

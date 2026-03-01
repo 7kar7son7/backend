@@ -3,10 +3,14 @@ import fp from 'fastify-plugin';
 import { Prisma } from '@prisma/client';
 
 import { env } from '../config/env';
-
-const DEFAULT_AKPA_LOGOS_BASE = 'https://logotypy.akpa.pl/logotypy-tv';
-const DEFAULT_AKPA_LOGOS_USER = 'logotypy_tv';
-const DEFAULT_AKPA_LOGOS_PASSWORD = 'logos_2024@';
+import { AKPA_LOGOS_DEFAULTS } from '../config/akpa-logos-defaults';
+import { fetchLogoFromAkpaFolder } from '../services/akpa-logo-fetcher';
+import {
+  loadAkpaLogoFolderMap,
+  getCachedAkpaFolderList,
+  findBestFolder,
+  channelNameToFolderCandidate,
+} from '../utils/akpa-logo-folders';
 
 function safeChannelId(id: string): boolean {
   return /^akpa_[a-zA-Z0-9_]+$/.test(id) && id.length <= 128;
@@ -80,9 +84,9 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
       const rawData = row?.logoData ?? row?.logodata;
       if (rawData != null && typeof (rawData as Buffer).length === 'number') rawLogoDataLength = (rawData as Buffer).length;
     }
-    const baseUrl = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? DEFAULT_AKPA_LOGOS_BASE).trim();
-    const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? DEFAULT_AKPA_LOGOS_USER).trim();
-    const password = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? DEFAULT_AKPA_LOGOS_PASSWORD).trim();
+    const baseUrl = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? AKPA_LOGOS_DEFAULTS.BASE_URL).trim();
+    const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? AKPA_LOGOS_DEFAULTS.USER).trim();
+    const password = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? AKPA_LOGOS_DEFAULTS.PASSWORD).trim();
     return reply.send({
       channelId,
       channelFound: !!ch,
@@ -104,21 +108,84 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
 
     const channel = await app.prisma.channel.findUnique({
       where: { externalId: channelId },
-      select: { logoData: true, logoContentType: true },
+      select: { logoData: true, logoContentType: true, name: true },
     });
     if (!channel) {
       request.log.debug({ channelId }, 'logos/akpa: channel not found');
       return reply.code(404).send({ error: 'Logo not found' });
     }
-    const buf = toBuffer(channel.logoData);
-    const contentType = channel.logoContentType != null ? String(channel.logoContentType).trim() : '';
+    let buf = toBuffer(channel.logoData);
+    let contentType = channel.logoContentType != null ? String(channel.logoContentType).trim() : '';
+    let source: 'prisma' | 'raw' = 'prisma';
+
+    // Fallback: Prisma czasem nie zwraca Bytes (bytea) poprawnie na produkcji – odczyt przez raw SQL
+    if (!buf || buf.length === 0 || !contentType) {
+      const raw = await app.prisma.$queryRaw<Array<{ logoData: unknown; logoContentType: unknown }>>(
+        Prisma.sql`SELECT "logoData", "logoContentType" FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
+      );
+      const row = raw[0];
+      if (row) {
+        const rawBuf = toBuffer(row.logoData);
+        const rawCt = row.logoContentType != null ? String(row.logoContentType).trim() : '';
+        if (rawBuf && rawBuf.length > 0 && rawCt) {
+          buf = rawBuf;
+          contentType = rawCt;
+          source = 'raw';
+        }
+      }
+    }
+
     if (buf && buf.length > 0 && contentType) {
-      request.log.info({ channelId, bytes: buf.length }, 'logos/akpa from DB');
+      request.log.info({ channelId, bytes: buf.length, source }, 'logos/akpa from DB');
       return reply
         .header('Cache-Control', 'public, max-age=86400')
         .type(contentType)
         .send(buf);
     }
+
+    // Fallback: zaloguj się na logotypy.akpa.pl (a) logotypy-tv, (b) nowe-logotypy – zwróć obraz, zapisz do bazy w tle
+    const baseUrl = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? AKPA_LOGOS_DEFAULTS.BASE_URL).trim();
+    const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? AKPA_LOGOS_DEFAULTS.USER).trim();
+    const password = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? AKPA_LOGOS_DEFAULTS.PASSWORD).trim();
+    const newBase = (env.AKPA_LOGOS_NEW_BASE_URL ?? process.env.AKPA_LOGOS_NEW_BASE_URL ?? AKPA_LOGOS_DEFAULTS.NEW_BASE_URL).trim().replace(/\/+$/, '');
+    const newUser = (env.AKPA_LOGOS_NEW_USER ?? process.env.AKPA_LOGOS_NEW_USER ?? AKPA_LOGOS_DEFAULTS.NEW_USER).trim();
+    const newPassword = (env.AKPA_LOGOS_NEW_PASSWORD ?? process.env.AKPA_LOGOS_NEW_PASSWORD ?? AKPA_LOGOS_DEFAULTS.NEW_PASSWORD).trim();
+    const newAuth = newBase && newUser && newPassword ? 'Basic ' + Buffer.from(`${newUser}:${newPassword}`).toString('base64') : null;
+
+    if ((baseUrl && user && password) && channel.name) {
+      const authHeader = 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64');
+      const folderMap = loadAkpaLogoFolderMap();
+      const folderList = await getCachedAkpaFolderList(baseUrl, authHeader);
+      const mappedFolder = folderMap[channelId];
+      const runtimeFolder = folderList.length > 0 ? findBestFolder(channel.name, folderList) : null;
+      const nameFolder = channelNameToFolderCandidate(channel.name);
+      const folder = mappedFolder ?? runtimeFolder ?? nameFolder ?? null;
+      if (folder) {
+        let akpaResult = await fetchLogoFromAkpaFolder(baseUrl, authHeader, folder, (msg, meta) => {
+          request.log.debug(meta ?? {}, msg);
+        });
+        if (!akpaResult && newAuth) {
+          akpaResult = await fetchLogoFromAkpaFolder(newBase, newAuth, folder, (msg, meta) => {
+            request.log.debug(meta ?? {}, msg);
+          });
+        }
+        if (akpaResult?.body && akpaResult.body.length > 0) {
+          request.log.info({ channelId, bytes: akpaResult.body.length }, 'logos/akpa from AKPA');
+          app.prisma.channel
+            .update({
+              where: { externalId: channelId },
+              data: { logoData: akpaResult.body, logoContentType: akpaResult.contentType },
+            })
+            .then(() => request.log.debug({ channelId }, 'logos/akpa: saved to DB'))
+            .catch((err) => request.log.warn({ err, channelId }, 'logos/akpa: save to DB failed'));
+          return reply
+            .header('Cache-Control', 'public, max-age=86400')
+            .type(akpaResult.contentType)
+            .send(akpaResult.body);
+        }
+      }
+    }
+
     request.log.debug({ channelId, hasLogoData: !!channel.logoData }, 'logos/akpa: no logo in DB');
     return reply.code(404).send({ error: 'Logo not found' });
   });
