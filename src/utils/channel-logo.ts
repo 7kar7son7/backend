@@ -42,9 +42,9 @@ export function toAbsoluteLogoUrl(logoUrl: string | null): string | null {
 }
 
 /**
- * Logo URL do zwrócenia w API. Zwracamy ścieżkę względną (/logos/akpa/xxx),
- * żeby aplikacja dopinała apiBaseUrl i ładowała obrazki z tego samego backendu co API.
- * (Gdy PUBLIC_API_URL jest ustawione, zwracamy pełny URL.)
+ * Logo URL do zwrócenia w API. Zawsze zwracamy pełny URL gdy PUBLIC_API_URL jest ustawione
+ * (na produkcji ustaw PUBLIC_API_URL=https://backend.devstudioit.app), żeby aplikacja
+ * ładowała obrazki bez polegania na apiBaseUrl. Wymuszamy https.
  */
 export function resolveChannelLogoUrlForApi(channel: {
   externalId: string;
@@ -53,6 +53,9 @@ export function resolveChannelLogoUrlForApi(channel: {
   const path = resolveChannelLogoUrl(channel);
   if (path == null) return null;
   const base = (env.PUBLIC_API_URL ?? process.env.PUBLIC_API_URL ?? '').trim().replace(/\/+$/, '');
-  if (base) return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  if (base) {
+    const full = `${base}${path.startsWith('/') ? path : `/${path}`}`;
+    return full.startsWith('http://') ? full.replace(/^http:\/\//, 'https://') : full;
+  }
   return path;
 }

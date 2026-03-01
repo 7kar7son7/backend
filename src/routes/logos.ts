@@ -95,27 +95,31 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     });
   });
 
-  /** GET /logos/akpa/:channelId – tylko z bazy (channels.logoData, channels.logoContentType). Mapowanie: externalId → jeden wiersz w channels. */
+  /** GET /logos/akpa/:channelId – wyłącznie z bazy (Prisma: channels.logoData, channels.logoContentType po externalId). */
   app.get('/akpa/:channelId', async (request, reply) => {
     const channelId = (request.params as { channelId: string }).channelId;
     if (!channelId || !safeChannelId(channelId)) {
       return reply.code(400).send({ error: 'Invalid channel id' });
     }
 
-    const rows = await app.prisma.$queryRaw<
-      Array<Record<string, unknown>>
-    >(Prisma.sql`SELECT "logoData", "logoContentType" FROM channels WHERE "externalId" = ${channelId} LIMIT 1`);
-    const row = rows[0];
-    const data = row?.logoData ?? row?.logodata;
-    const contentTypeCol = row?.logoContentType ?? row?.logocontenttype;
-    const buf = toBuffer(data);
-    if (buf && buf.length > 0 && contentTypeCol) {
+    const channel = await app.prisma.channel.findUnique({
+      where: { externalId: channelId },
+      select: { logoData: true, logoContentType: true },
+    });
+    if (!channel) {
+      request.log.debug({ channelId }, 'logos/akpa: channel not found');
+      return reply.code(404).send({ error: 'Logo not found' });
+    }
+    const buf = toBuffer(channel.logoData);
+    const contentType = channel.logoContentType != null ? String(channel.logoContentType).trim() : '';
+    if (buf && buf.length > 0 && contentType) {
       request.log.info({ channelId, bytes: buf.length }, 'logos/akpa from DB');
       return reply
         .header('Cache-Control', 'public, max-age=86400')
-        .type(String(contentTypeCol))
+        .type(contentType)
         .send(buf);
     }
+    request.log.debug({ channelId, hasLogoData: !!channel.logoData }, 'logos/akpa: no logo in DB');
     return reply.code(404).send({ error: 'Logo not found' });
   });
 });
