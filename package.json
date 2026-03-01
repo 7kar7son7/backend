@@ -20,7 +20,8 @@
     "logos:restore": "tsx src/scripts/restore-logos.ts",
     "logos:download:akpa": "tsx src/scripts/download-akpa-logos.ts",
     "logos:build-map": "tsx src/scripts/build-akpa-logo-map.ts",
-    "logos:sync-static-to-db": "tsx src/scripts/sync-logos-static-to-db.ts"
+    "logos:sync-static-to-db": "tsx src/scripts/sync-logos-static-to-db.ts",
+    "logos:sync-one": "tsx src/scripts/sync-one-channel-logo.ts"
   },
   "keywords": [],
   "author": "",

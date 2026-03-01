@@ -3,13 +3,6 @@ import fp from 'fastify-plugin';
 import { Prisma } from '@prisma/client';
 
 import { env } from '../config/env';
-import { fetchLogoFromAkpaFolder } from '../services/akpa-logo-fetcher';
-import {
-  loadAkpaLogoFolderMap,
-  getCachedAkpaFolderList,
-  findBestFolder,
-  channelNameToFolderCandidate,
-} from '../utils/akpa-logo-folders';
 
 const DEFAULT_AKPA_LOGOS_BASE = 'https://logotypy.akpa.pl/logotypy-tv';
 const DEFAULT_AKPA_LOGOS_USER = 'logotypy_tv';
@@ -102,7 +95,7 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     });
   });
 
-  /** GET /logos/akpa/:channelId – logo z bazy; gdy brak w bazie: fallback – pobierz z AKPA, zwróć i zapisz do bazy. */
+  /** GET /logos/akpa/:channelId – tylko z bazy (channels.logoData, channels.logoContentType). Mapowanie: externalId → jeden wiersz w channels. */
   app.get('/akpa/:channelId', async (request, reply) => {
     const channelId = (request.params as { channelId: string }).channelId;
     if (!channelId || !safeChannelId(channelId)) {
@@ -123,70 +116,7 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
         .type(String(contentTypeCol))
         .send(buf);
     }
-
-    // Fallback: brak logo w bazie – pobierz z logotypy.akpa.pl, zwróć i zapisz do bazy
-    const baseUrl = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? DEFAULT_AKPA_LOGOS_BASE).trim();
-    const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? DEFAULT_AKPA_LOGOS_USER).trim();
-    const password = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? DEFAULT_AKPA_LOGOS_PASSWORD).trim();
-    if (!baseUrl || !user || !password) {
-      return reply.code(404).send({ error: 'Logo not found' });
-    }
-
-    const channel = await app.prisma.channel.findUnique({
-      where: { externalId: channelId },
-      select: { id: true, name: true },
-    });
-    if (!channel) {
-      return reply.code(404).send({ error: 'Channel not found' });
-    }
-
-    const authHeader = 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64');
-    const folderMap = loadAkpaLogoFolderMap();
-    const folderList = await getCachedAkpaFolderList(baseUrl, authHeader);
-    const mappedFolder = folderMap[channelId];
-    const runtimeFolder = folderList.length > 0 ? findBestFolder(channel.name, folderList) : null;
-    const nameFolder = channelNameToFolderCandidate(channel.name);
-    const folder = mappedFolder ?? runtimeFolder ?? nameFolder ?? null;
-
-    if (!folder) {
-      request.log.debug({ channelId, name: channel.name }, 'logos/akpa fallback: no folder');
-      return reply.code(404).send({ error: 'Logo not found' });
-    }
-
-    let result = await fetchLogoFromAkpaFolder(baseUrl, authHeader, folder, (msg, meta) => {
-      request.log.debug(meta ?? {}, msg);
-    });
-    const newBase = (env.AKPA_LOGOS_NEW_BASE_URL ?? process.env.AKPA_LOGOS_NEW_BASE_URL ?? '').trim().replace(/\/+$/, '');
-    const newUser = (env.AKPA_LOGOS_NEW_USER ?? process.env.AKPA_LOGOS_NEW_USER ?? '').trim();
-    const newPassword = (env.AKPA_LOGOS_NEW_PASSWORD ?? process.env.AKPA_LOGOS_NEW_PASSWORD ?? '').trim();
-    if (!result && newBase && newUser && newPassword) {
-      const newAuth = 'Basic ' + Buffer.from(`${newUser}:${newPassword}`).toString('base64');
-      result = await fetchLogoFromAkpaFolder(newBase, newAuth, folder, (msg, meta) => {
-        request.log.debug(meta ?? {}, msg);
-      });
-    }
-
-    if (!result || !result.body.length) {
-      return reply.code(404).send({ error: 'Logo not found' });
-    }
-
-    request.log.info({ channelId, bytes: result.body.length }, 'logos/akpa from AKPA fallback');
-    void app.prisma.channel
-      .update({
-        where: { externalId: channelId },
-        data: {
-          logoUrl: `/logos/akpa/${channelId}`,
-          logoData: new Uint8Array(result!.body),
-          logoContentType: result.contentType,
-        },
-      })
-      .then(() => request.log.debug({ channelId }, 'logos/akpa saved to DB'))
-      .catch((err) => request.log.warn({ err, channelId }, 'logos/akpa save to DB failed'));
-
-    return reply
-      .header('Cache-Control', 'public, max-age=86400')
-      .type(result.contentType)
-      .send(result.body);
+    return reply.code(404).send({ error: 'Logo not found' });
   });
 });
 
