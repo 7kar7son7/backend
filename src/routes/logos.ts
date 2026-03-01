@@ -111,12 +111,13 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
       select: { logoData: true, logoContentType: true, name: true },
     });
     if (!channel) {
-      request.log.debug({ channelId }, 'logos/akpa: channel not found');
+      request.log.info({ channelId }, 'logos/akpa: 404 – kanał nie znaleziony w bazie (sprawdź czy produkcja używa tej samej DATABASE_URL co baza z logotypami)');
       return reply.code(404).send({ error: 'Logo not found' });
     }
     let buf = toBuffer(channel.logoData);
     let contentType = channel.logoContentType != null ? String(channel.logoContentType).trim() : '';
     let source: 'prisma' | 'raw' = 'prisma';
+    const prismaLen = buf?.length ?? 0;
 
     // Fallback: Prisma czasem nie zwraca Bytes (bytea) poprawnie na produkcji – odczyt przez raw SQL
     if (!buf || buf.length === 0 || !contentType) {
@@ -134,6 +135,7 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
         }
       }
     }
+    const rawLen = buf?.length ?? 0;
 
     if (buf && buf.length > 0 && contentType) {
       request.log.info({ channelId, bytes: buf.length, source }, 'logos/akpa from DB');
@@ -186,7 +188,16 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
       }
     }
 
-    request.log.debug({ channelId, hasLogoData: !!channel.logoData }, 'logos/akpa: no logo in DB');
+    request.log.info(
+      {
+        channelId,
+        channelName: channel.name,
+        prismaLogoLength: prismaLen,
+        rawSqlLogoLength: rawLen,
+        dbHost: process.env.DATABASE_URL?.replace(/^[^@]+@/, '***@').split('/')[0],
+      },
+      'logos/akpa: 404 – brak logoData w bazie (Prisma i raw SQL). Sprawdź GET /logos/debug/db – jeśli channelsWithLogo=0, produkcja łączy się z inną bazą niż ta z logotypami.',
+    );
     return reply.code(404).send({ error: 'Logo not found' });
   });
 });
