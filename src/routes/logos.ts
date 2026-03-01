@@ -35,6 +35,18 @@ function toBuffer(data: unknown): Buffer | null {
   return null;
 }
 
+/** pg w raw query często zwraca nazwy kolumn w lowercase – odczytaj po dowolnej wersji */
+function rowVal<T>(row: Record<string, unknown>, ...keys: string[]): T | undefined {
+  for (const k of keys) {
+    if (Object.prototype.hasOwnProperty.call(row, k)) return row[k] as T;
+  }
+  for (const k of keys) {
+    const low = k.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(row, low)) return row[low] as T;
+  }
+  return undefined;
+}
+
 const logosRoutes = fp(async (app: FastifyInstance) => {
   /** Diagnostyka: GET /logos/debug/db → ile kanałów AKPA ma logoData w bazie (raw SQL). Na produkcji sprawdź czy backend widzi dane. */
   app.get('/debug/db', async (_request, reply) => {
@@ -119,19 +131,43 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     let source: 'prisma' | 'raw' = 'prisma';
     const prismaLen = buf?.length ?? 0;
 
-    // Fallback: Prisma czasem nie zwraca Bytes (bytea) poprawnie na produkcji – odczyt przez raw SQL
+    // Fallback 1: raw SQL – pg zwraca kolumny często w lowercase (logodata, logocontenttype)
     if (!buf || buf.length === 0 || !contentType) {
-      const raw = await app.prisma.$queryRaw<Array<{ logoData: unknown; logoContentType: unknown }>>(
+      const raw = await app.prisma.$queryRaw<Array<Record<string, unknown>>>(
         Prisma.sql`SELECT "logoData", "logoContentType" FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
       );
       const row = raw[0];
       if (row) {
-        const rawBuf = toBuffer(row.logoData);
-        const rawCt = row.logoContentType != null ? String(row.logoContentType).trim() : '';
+        const rawData = rowVal<unknown>(row, 'logoData', 'logodata', 'logo_data');
+        const rawCtVal = rowVal<unknown>(row, 'logoContentType', 'logocontenttype', 'logo_content_type');
+        const rawBuf = toBuffer(rawData);
+        const rawCt = rawCtVal != null ? String(rawCtVal).trim() : '';
         if (rawBuf && rawBuf.length > 0 && rawCt) {
           buf = rawBuf;
           contentType = rawCt;
           source = 'raw';
+        }
+      }
+    }
+    // Fallback 2: bytea przez encode(..., 'hex') – niezależnie od drivera (Railway/pg często zwraca pusty bytea)
+    if (!buf || buf.length === 0) {
+      const hexRaw = await app.prisma.$queryRaw<Array<Record<string, unknown>>>(
+        Prisma.sql`SELECT encode("logoData", 'hex') as hex_data, "logoContentType" as logo_content_type FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
+      );
+      const hexR = hexRaw[0];
+      if (hexR) {
+        const hexStr = rowVal<string>(hexR, 'hex_data', 'hex_data');
+        const ctStr = rowVal<string>(hexR, 'logo_content_type', 'logo_content_type');
+        if (hexStr && hexStr.length > 0) {
+          try {
+            buf = Buffer.from(hexStr, 'hex');
+            if (buf.length > 0) {
+              contentType = (ctStr != null && String(ctStr).trim()) ? String(ctStr).trim() : contentType || 'image/png';
+              source = 'raw';
+            }
+          } catch {
+            // ignore
+          }
         }
       }
     }
