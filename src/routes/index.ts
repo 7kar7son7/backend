@@ -1,4 +1,6 @@
 import { Prisma } from '@prisma/client';
+import { env } from '../config/env';
+import { AKPA_LOGOS_DEFAULTS } from '../config/akpa-logos-defaults';
 import healthRoutes from './health';
 import appRoutes from './app';
 import channelsRoutes from './channels';
@@ -23,7 +25,7 @@ export async function registerRoutes<T extends import('fastify').FastifyInstance
   await app.register(programsRoutes, { prefix: '/programs' });
   await app.register(epgRoutes, { prefix: '/epg' });
 
-  // Diagnostyka logotypów – rejestracja na głównej instancji (bez prefixu), żeby działała zawsze
+  // Diagnostyka logotypów – na głównej instancji, żeby zawsze działała (nie zależała od pluginu)
   app.get('/logos/debug/db', async (_request, reply) => {
     try {
       const countResult = await app.prisma.$queryRaw<[{ count: bigint }]>(
@@ -44,6 +46,55 @@ export async function registerRoutes<T extends import('fastify').FastifyInstance
         message: 'Błąd połączenia z bazą lub zapytania.',
       });
     }
+  });
+
+  app.get<{ Params: { channelId: string } }>('/logos/debug/akpa/:channelId', async (request, reply) => {
+    const channelId = request.params.channelId;
+    if (!channelId || !/^akpa_[a-zA-Z0-9_]+$/.test(channelId) || channelId.length > 128) {
+      return reply.code(400).send({ error: 'Invalid channel id' });
+    }
+    const ch = await app.prisma.channel.findUnique({
+      where: { externalId: channelId },
+      select: { name: true, logoData: true, logoContentType: true },
+    });
+    const hasData = ch?.logoData != null;
+    const len =
+      hasData && Buffer.isBuffer(ch!.logoData)
+        ? ch!.logoData.length
+        : hasData && ch!.logoData instanceof Uint8Array
+          ? ch!.logoData.length
+          : null;
+    let rawLogoDataLength: number | null = null;
+    let hexLength: number | null = null;
+    if (ch) {
+      const raw = await app.prisma.$queryRaw<Array<Record<string, unknown>>>(
+        Prisma.sql`SELECT "logoData", "logoContentType" FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
+      );
+      const row = raw[0];
+      const rawData = row?.['logoData'] ?? row?.['logodata'];
+      if (rawData != null && typeof (rawData as Buffer).length === 'number')
+        rawLogoDataLength = (rawData as Buffer).length;
+      const hexRow = await app.prisma.$queryRaw<Array<Record<string, unknown>>>(
+        Prisma.sql`SELECT encode("logoData", 'hex') as hex_data FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
+      );
+      const h = hexRow[0];
+      const hexVal = h ? (h['hex_data'] ?? h['hex_data']) : null;
+      if (hexVal && typeof hexVal === 'string') hexLength = hexVal.length;
+    }
+    const baseUrl = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? AKPA_LOGOS_DEFAULTS.BASE_URL).trim();
+    const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? AKPA_LOGOS_DEFAULTS.USER).trim();
+    const password = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? AKPA_LOGOS_DEFAULTS.PASSWORD).trim();
+    return reply.send({
+      channelId,
+      channelFound: !!ch,
+      hasLogoData: hasData,
+      hasContentType: !!(ch?.logoContentType),
+      logoDataLength: len,
+      rawLogoDataLength,
+      hexLength,
+      name: ch?.name ?? null,
+      akpaLogosConfigured: !!(baseUrl && user && password),
+    });
   });
 
   await app.register(logosRoutes, { prefix: '/logos' });
