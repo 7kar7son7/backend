@@ -48,14 +48,13 @@ async function fetchChannelsFromAkpaApi(): Promise<{ externalId: string; name: s
   if (!token) throw new Error('Brak AKPA_API_TOKEN – ustaw w .env, żeby pobrać listę kanałów z API AKPA.');
   const url = `${baseUrl}/channels`;
   const authType = (env.AKPA_AUTH_TYPE ?? process.env.AKPA_AUTH_TYPE ?? 'Bearer').trim();
-  const authHeader =
-    authType === 'X-Api-Key'
-      ? undefined
-      : authType === 'Token'
-        ? { Authorization: `Token ${token}` }
-        : { Authorization: `Bearer ${token}` };
-  const headers = authType === 'X-Api-Key' ? { 'X-API-Key': token, Accept: 'application/json' } : { ...authHeader, Accept: 'application/json' };
-  const res = await fetch(url, { method: 'GET', headers } as RequestInit);
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (authType === 'X-Api-Key') {
+    headers['X-API-Key'] = token;
+  } else {
+    headers['Authorization'] = authType === 'Token' ? `Token ${token}` : `Bearer ${token}`;
+  }
+  const res = await fetch(url, { method: 'GET', headers });
   if (!res.ok) throw new Error(`AKPA API channels: ${res.status} ${await res.text().then((t) => t.slice(0, 200))}`);
   const json = (await res.json()) as unknown;
   let rawList: AkpaChannelRaw[] = [];
