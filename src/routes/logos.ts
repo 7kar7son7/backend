@@ -174,7 +174,7 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
           app.prisma.channel
             .update({
               where: { externalId: channelId },
-              data: { logoData: akpaResult.body, logoContentType: akpaResult.contentType },
+              data: { logoData: new Uint8Array(akpaResult.body), logoContentType: akpaResult.contentType },
             })
             .then(() => request.log.debug({ channelId }, 'logos/akpa: saved to DB'))
             .catch((err) => request.log.warn({ err, channelId }, 'logos/akpa: save to DB failed'));
