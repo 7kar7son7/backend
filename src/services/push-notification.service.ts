@@ -54,23 +54,6 @@ export class PushNotificationService {
           // i usuń białe znaki na początku/końcu
           let privateKey = env.FCM_PRIVATE_KEY.trim();
           
-          // Logowanie do debugowania formatu klucza - BARDZO SZCZEGÓŁOWE
-          this.logger.error({
-            originalKeyLength: env.FCM_PRIVATE_KEY.length,
-            originalKeyFirstChars: env.FCM_PRIVATE_KEY.substring(0, 100),
-            originalKeyLastChars: env.FCM_PRIVATE_KEY.substring(Math.max(0, env.FCM_PRIVATE_KEY.length - 100)),
-            hasNewlines: env.FCM_PRIVATE_KEY.includes('\n'),
-            hasLiteralN: env.FCM_PRIVATE_KEY.includes('\\n'),
-            hasColons: env.FCM_PRIVATE_KEY.includes(':'),
-            hasBegin: env.FCM_PRIVATE_KEY.includes('-----BEGIN'),
-            hasEnd: env.FCM_PRIVATE_KEY.includes('-----END'),
-            looksLikeBase64: /^[A-Za-z0-9+/=:]+$/.test(env.FCM_PRIVATE_KEY),
-            firstChar: env.FCM_PRIVATE_KEY[0],
-            lastChar: env.FCM_PRIVATE_KEY[env.FCM_PRIVATE_KEY.length - 1],
-            // Pełny klucz (UWAGA: to może być długie!)
-            fullKey: env.FCM_PRIVATE_KEY,
-          }, 'FCM_PRIVATE_KEY FULL ANALYSIS - DEBUGGING');
-          
           // Jeśli klucz wygląda jak base64 z dwukropkami (Railway może tak kodować), spróbuj zdekodować
           // Railway może kodować klucz w base64 i dzielić go na części z dwukropkami
           if (privateKey.includes(':') && !privateKey.includes('-----BEGIN') && /^[A-Za-z0-9+/=:]+$/.test(privateKey)) {
@@ -85,25 +68,11 @@ export class PushNotificationService {
               
               const decoded = Buffer.from(paddedBase64, 'base64').toString('utf-8');
               
-              this.logger.error({
-                originalLength: privateKey.length,
-                base64Length: base64String.length,
-                paddedLength: paddedBase64.length,
+              this.logger.debug({
                 decodedLength: decoded.length,
-                decodedFirstChars: decoded.substring(0, 200),
-                decodedLastChars: decoded.substring(Math.max(0, decoded.length - 200)),
-                decodedFull: decoded, // Pełny zdekodowany string do debugowania
                 hasBegin: decoded.includes('-----BEGIN'),
                 hasEnd: decoded.includes('-----END'),
-                isJSON: (() => {
-                  try {
-                    JSON.parse(decoded);
-                    return true;
-                  } catch {
-                    return false;
-                  }
-                })(),
-              }, 'Base64 decoded key - FULL DEBUG');
+              }, 'Base64 decoded key');
               
               // Jeśli dekodowanie dało poprawny PEM, użyj go
               if (decoded.includes('-----BEGIN PRIVATE KEY-----') && decoded.includes('-----END PRIVATE KEY-----')) {
@@ -185,9 +154,6 @@ export class PushNotificationService {
                 hasBegin: privateKey.includes('-----BEGIN'),
                 hasEnd: privateKey.includes('-----END'),
                 keyLength: privateKey.length,
-                keyPreview: privateKey.substring(0, 100),
-                originalKeyLength: env.FCM_PRIVATE_KEY.length,
-                originalKeyPreview: env.FCM_PRIVATE_KEY.substring(0, 100),
               },
               'FCM_PRIVATE_KEY does not appear to be in valid PEM format',
             );
@@ -224,7 +190,7 @@ export class PushNotificationService {
                 throw initError; // Rzuć oryginalny błąd
               }
             } else {
-              this.logger.error({ error: initError, keyPreview: privateKey.substring(0, 50) }, 'Failed to initialize Firebase Admin SDK');
+              this.logger.error({ error: initError }, 'Failed to initialize Firebase Admin SDK');
               throw initError;
             }
           }

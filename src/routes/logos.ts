@@ -88,13 +88,22 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
         ? ch!.logoData.length
         : null;
     let rawLogoDataLength: number | null = null;
+    let hexLength: number | null = null;
     if (ch) {
       const raw = await app.prisma.$queryRaw<Array<Record<string, unknown>>>(
         Prisma.sql`SELECT "logoData", "logoContentType" FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
       );
       const row = raw[0];
-      const rawData = row?.logoData ?? row?.logodata;
-      if (rawData != null && typeof (rawData as Buffer).length === 'number') rawLogoDataLength = (rawData as Buffer).length;
+      if (row) {
+        const rawData = rowVal<unknown>(row, 'logoData', 'logodata');
+        if (rawData != null && typeof (rawData as Buffer).length === 'number') rawLogoDataLength = (rawData as Buffer).length;
+      }
+      const hexRow = await app.prisma.$queryRaw<Array<Record<string, unknown>>>(
+        Prisma.sql`SELECT encode("logoData", 'hex') as hex_data FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
+      );
+      const h = hexRow[0];
+      const hexVal = h ? rowVal<string>(h, 'hex_data', 'hex_data') : null;
+      if (hexVal && typeof hexVal === 'string') hexLength = hexVal.length;
     }
     const baseUrl = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? AKPA_LOGOS_DEFAULTS.BASE_URL).trim();
     const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? AKPA_LOGOS_DEFAULTS.USER).trim();
@@ -106,6 +115,7 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
       hasContentType: !!(ch?.logoContentType),
       logoDataLength: len,
       rawLogoDataLength,
+      hexLength,
       name: ch?.name ?? null,
       akpaLogosConfigured: !!(baseUrl && user && password),
     });
@@ -131,8 +141,56 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     let source: 'prisma' | 'raw' = 'prisma';
     const prismaLen = buf?.length ?? 0;
 
-    // Fallback 1: raw SQL – pg zwraca kolumny często w lowercase (logodata, logocontenttype)
-    if (!buf || buf.length === 0 || !contentType) {
+    // Główny fallback: encode(bytea,'hex') – na Railway/pg bytea często wraca puste z Prisma; hex zawsze działa
+    if (!buf || buf.length === 0) {
+      try {
+        const hexRaw = await app.prisma.$queryRaw<Array<Record<string, unknown>>>(
+          Prisma.sql`SELECT encode("logoData", 'hex') as hex_data, "logoContentType" as logo_content_type FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
+        );
+        const hexR = hexRaw[0];
+        if (hexR) {
+          const hexVal = rowVal<unknown>(hexR, 'hex_data', 'hex_data');
+          const ctVal = rowVal<unknown>(hexR, 'logo_content_type', 'logo_content_type');
+          const hexStr =
+            hexVal == null ? '' : Buffer.isBuffer(hexVal) ? hexVal.toString('utf8') : String(hexVal).trim();
+          if (hexStr.length > 0) {
+            buf = Buffer.from(hexStr, 'hex');
+            if (buf.length > 0) {
+              contentType = (ctVal != null && String(ctVal).trim()) ? String(ctVal).trim() : 'image/png';
+              source = 'raw';
+            }
+          }
+        }
+      } catch (hexErr) {
+        request.log.warn({ err: hexErr, channelId }, 'logos/akpa: encode(hex) fallback failed');
+      }
+    }
+    // Jeśli nadal puste – może tabela ma kolumny snake_case (logo_data); externalId parametryzowany
+    if (!buf || buf.length === 0) {
+      try {
+        const hexRaw2 = await app.prisma.$queryRaw<Array<Record<string, unknown>>>(
+          Prisma.sql`SELECT encode(logo_data, 'hex') as hex_data, logo_content_type FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
+        );
+        const hexR = hexRaw2[0];
+        if (hexR) {
+          const hexVal = rowVal<unknown>(hexR, 'hex_data', 'hex_data');
+          const ctVal = rowVal<unknown>(hexR, 'logo_content_type', 'logo_content_type');
+          const hexStr = hexVal != null ? String(hexVal).trim() : '';
+          if (hexStr.length > 0) {
+            buf = Buffer.from(hexStr, 'hex');
+            if (buf.length > 0) {
+              contentType = (ctVal != null && String(ctVal).trim()) ? String(ctVal).trim() : 'image/png';
+              source = 'raw';
+            }
+          }
+        }
+      } catch {
+        // ignore – kolumna logo_data może nie istnieć
+      }
+    }
+
+    // Fallback 3: surowy SELECT bytea (pg może zwrócić kolumny jako logodata w lowercase)
+    if ((!buf || buf.length === 0) && !contentType) {
       const raw = await app.prisma.$queryRaw<Array<Record<string, unknown>>>(
         Prisma.sql`SELECT "logoData", "logoContentType" FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
       );
@@ -146,28 +204,6 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
           buf = rawBuf;
           contentType = rawCt;
           source = 'raw';
-        }
-      }
-    }
-    // Fallback 2: bytea przez encode(..., 'hex') – niezależnie od drivera (Railway/pg często zwraca pusty bytea)
-    if (!buf || buf.length === 0) {
-      const hexRaw = await app.prisma.$queryRaw<Array<Record<string, unknown>>>(
-        Prisma.sql`SELECT encode("logoData", 'hex') as hex_data, "logoContentType" as logo_content_type FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
-      );
-      const hexR = hexRaw[0];
-      if (hexR) {
-        const hexStr = rowVal<string>(hexR, 'hex_data', 'hex_data');
-        const ctStr = rowVal<string>(hexR, 'logo_content_type', 'logo_content_type');
-        if (hexStr && hexStr.length > 0) {
-          try {
-            buf = Buffer.from(hexStr, 'hex');
-            if (buf.length > 0) {
-              contentType = (ctStr != null && String(ctStr).trim()) ? String(ctStr).trim() : contentType || 'image/png';
-              source = 'raw';
-            }
-          } catch {
-            // ignore
-          }
         }
       }
     }
@@ -232,7 +268,7 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
         rawSqlLogoLength: rawLen,
         dbHost: process.env.DATABASE_URL?.replace(/^[^@]+@/, '***@').split('/')[0],
       },
-      'logos/akpa: 404 – brak logoData w bazie (Prisma i raw SQL). Sprawdź GET /logos/debug/db – jeśli channelsWithLogo=0, produkcja łączy się z inną bazą niż ta z logotypami.',
+      'logos/akpa: 404 – nie udało się odczytać logoData (Prisma/raw/encode). Sprawdź GET /logos/debug/akpa/' + channelId,
     );
     return reply.code(404).send({ error: 'Logo not found' });
   });
