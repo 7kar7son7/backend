@@ -3,10 +3,12 @@
  * pobiera logotypy, zapisuje do static/logos/akpa/ i ustawia Channel.logoUrl.
  *
  * Wymaga w .env: DATABASE_URL, AKPA_LOGOS_BASE_URL, AKPA_LOGOS_USER, AKPA_LOGOS_PASSWORD
- * Opcjonalnie: AKPA_LOGOS_NEW_BASE_URL, AKPA_LOGOS_NEW_USER, AKPA_LOGOS_NEW_PASSWORD
+ * Opcjonalnie: AKPA_LOGOS_NEW_* (drugi serwis), AKPA_API_URL + AKPA_API_TOKEN (gdy brak kanałów w bazie)
+ *
+ * Gdy w bazie nie ma kanałów AKPA (externalId akpa_*), skrypt pobiera listę kanałów z API AKPA
+ * i tworzy rekordy w DB, potem pobiera dla wszystkich logotypy.
  *
  * Uruchomienie: npm run logos:download:akpa
- * (Connection string do bazy ustaw w .env jako DATABASE_URL)
  */
 import { PrismaClient } from '@prisma/client';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -21,6 +23,53 @@ import { AKPA_LOGOS_DEFAULTS } from '../config/akpa-logos-defaults';
 import { parseFolderNamesFromHtml, findBestFolder } from '../utils/akpa-logo-folders';
 
 const prisma = new PrismaClient();
+
+const EXTERNAL_ID_PREFIX = 'akpa_';
+
+type AkpaChannelRaw = { id?: string | number; name?: string; title?: string; slug?: string; [key: string]: unknown };
+
+function getChannelId(raw: AkpaChannelRaw): string {
+  const id = raw.id ?? raw.slug;
+  if (id !== undefined && id !== null) return String(id);
+  const name = raw.name ?? raw.title ?? '';
+  return name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/gi, '') || 'unknown';
+}
+
+function getChannelName(raw: AkpaChannelRaw): string {
+  const name = raw.name ?? raw.title ?? raw.slug;
+  if (typeof name === 'string' && name.trim()) return name.trim();
+  return String(raw.id ?? 'Kanał');
+}
+
+/** Pobiera listę kanałów z API AKPA i zwraca { externalId, name }. Wymaga AKPA_API_URL + AKPA_API_TOKEN. */
+async function fetchChannelsFromAkpaApi(): Promise<{ externalId: string; name: string }[]> {
+  const baseUrl = (env.AKPA_API_URL ?? process.env.AKPA_API_URL ?? 'https://api-epg.akpa.pl/api/v1').replace(/\/+$/, '');
+  const token = (env.AKPA_API_TOKEN ?? process.env.AKPA_API_TOKEN ?? '').trim();
+  if (!token) throw new Error('Brak AKPA_API_TOKEN – ustaw w .env, żeby pobrać listę kanałów z API AKPA.');
+  const url = `${baseUrl}/channels`;
+  const authType = (env.AKPA_AUTH_TYPE ?? process.env.AKPA_AUTH_TYPE ?? 'Bearer').trim();
+  const authHeader =
+    authType === 'X-Api-Key'
+      ? undefined
+      : authType === 'Token'
+        ? { Authorization: `Token ${token}` }
+        : { Authorization: `Bearer ${token}` };
+  const headers = authType === 'X-Api-Key' ? { 'X-API-Key': token, Accept: 'application/json' } : { ...authHeader, Accept: 'application/json' };
+  const res = await fetch(url, { method: 'GET', headers } as RequestInit);
+  if (!res.ok) throw new Error(`AKPA API channels: ${res.status} ${await res.text().then((t) => t.slice(0, 200))}`);
+  const json = (await res.json()) as unknown;
+  let rawList: AkpaChannelRaw[] = [];
+  if (Array.isArray(json)) rawList = json as AkpaChannelRaw[];
+  else if (json && typeof json === 'object') {
+    const o = json as Record<string, unknown>;
+    if (Array.isArray(o.data)) rawList = o.data as AkpaChannelRaw[];
+    else if (Array.isArray(o.channels)) rawList = o.channels as AkpaChannelRaw[];
+  }
+  return rawList.map((raw) => ({
+    externalId: EXTERNAL_ID_PREFIX + getChannelId(raw),
+    name: getChannelName(raw),
+  }));
+}
 
 const LOGO_FILES = ['logo.png', 'logo.jpg', 'logo.jpeg', 'image.png', 'image.jpg', 'logo.svg'];
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg)$/i;
@@ -129,10 +178,38 @@ async function main() {
     }
   }
 
-  const channels = await prisma.channel.findMany({
+  let channels = await prisma.channel.findMany({
     where: { externalId: { startsWith: 'akpa_' } },
     select: { id: true, externalId: true, name: true },
   });
+
+  if (channels.length === 0) {
+    const apiUrl = env.AKPA_API_URL ?? process.env.AKPA_API_URL;
+    const token = env.AKPA_API_TOKEN ?? process.env.AKPA_API_TOKEN;
+    if (apiUrl && token) {
+      console.log('Brak kanałów AKPA w bazie – pobieram listę z API AKPA ...');
+      const list = await fetchChannelsFromAkpaApi();
+      console.log(`  API zwróciło ${list.length} kanałów. Zapisuję do bazy ...`);
+      for (const { externalId, name } of list) {
+        await prisma.channel.upsert({
+          where: { externalId },
+          create: { externalId, name },
+          update: { name },
+        });
+      }
+      channels = await prisma.channel.findMany({
+        where: { externalId: { startsWith: 'akpa_' } },
+        select: { id: true, externalId: true, name: true },
+      });
+      console.log(`  W bazie jest teraz ${channels.length} kanałów AKPA.\n`);
+    } else {
+      console.error(
+        '\nBrak kanałów AKPA w bazie. Ustaw w .env: AKPA_API_URL i AKPA_API_TOKEN, potem uruchom ten skrypt ponownie,\n' +
+          'albo najpierw uruchom import EPG: npm run epg:import\n',
+      );
+      process.exit(1);
+    }
+  }
 
   console.log(`\nKanały AKPA w bazie: ${channels.length}. Dopasowanie i pobieranie logotypów ...\n`);
 
