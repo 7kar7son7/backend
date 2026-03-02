@@ -2,7 +2,6 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { channelLogoUrlForResponse, resolveChannelLogoUrlForApi } from '../utils/channel-logo';
-import { readLogoFromStatic } from '../utils/static-logos';
 import { ChannelService } from '../services/channel.service';
 import { ProgramService } from '../services/program.service';
 
@@ -62,34 +61,10 @@ export default async function channelsRoutes(app: FastifyInstance) {
       'GET /channels – lista kanałów',
     );
 
+    // Lista: NIE wstawiamy data URL (60× base64 = RangeError: Invalid string length przy JSON.stringify).
+    // logoUrl tylko jako pełny URL – logotypy z GET /logos/akpa/:id (lub embedded na prod).
     const formattedChannels = channels.map((channel) => {
-      const logoData = channel.logoData;
-      const hasLogoData =
-        logoData != null &&
-        ((Buffer.isBuffer(logoData) && logoData.length > 0) ||
-          (logoData instanceof Uint8Array && logoData.length > 0));
-      const logoContentType =
-        channel.logoContentType != null && String(channel.logoContentType).trim() !== ''
-          ? String(channel.logoContentType).trim()
-          : null;
-      let logoBase64: string | null = null;
-      let contentType: string | null = null;
-      if (hasLogoData && logoContentType) {
-        logoBase64 =
-          Buffer.isBuffer(logoData) ? logoData.toString('base64') : Buffer.from(logoData).toString('base64');
-        contentType = logoContentType;
-      } else if (String(channel.externalId ?? '').startsWith('akpa_')) {
-        const fromStatic = readLogoFromStatic(String(channel.externalId));
-        if (fromStatic) {
-          logoBase64 = fromStatic.body.toString('base64');
-          contentType = fromStatic.contentType;
-        }
-      }
-      // Jak w starym EPG: logoUrl to gotowy URL do wyświetlenia – data URL gdy mamy bajty (zero requestów do /logos/akpa/)
-      const resolvedLogoUrl =
-        logoBase64 && contentType
-          ? `data:${contentType};base64,${logoBase64}`
-          : resolveChannelLogoUrlForApi(channel);
+      const resolvedLogoUrl = resolveChannelLogoUrlForApi(channel);
       const base: Record<string, unknown> = {
         id: String(channel.id),
         externalId: String(channel.externalId),
@@ -99,10 +74,6 @@ export default async function channelsRoutes(app: FastifyInstance) {
         category: channel.category != null ? String(channel.category) : null,
         countryCode: channel.countryCode != null ? String(channel.countryCode) : null,
       };
-      if (logoBase64 && contentType) {
-        base.logoBase64 = logoBase64;
-        base.logoContentType = contentType;
-      }
 
       if (!includePrograms) {
         return base;
