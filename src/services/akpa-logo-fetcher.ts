@@ -58,17 +58,15 @@ async function fetchFolderListing(
     });
     clearTimeout(timeout);
     if (!res.ok) {
-      onStatus?.('akpa folder listing', { folder: folderName, status: res.status });
+      onStatus?.('akpa folder listing', { folder: folderName, status: res.status, urlHost: new URL(url).host });
       return [];
     }
     const html = await res.text();
     return parseImageLinksFromHtml(html);
   } catch (err) {
     clearTimeout(timeout);
-    onStatus?.('akpa folder listing error', {
-      folder: folderName,
-      error: err instanceof Error ? err.message : String(err),
-    });
+    const errMsg = err instanceof Error ? err.message : String(err);
+    onStatus?.('akpa folder listing error', { folder: folderName, error: errMsg });
     return [];
   }
 }
@@ -87,6 +85,7 @@ export async function fetchLogoFromAkpaFolder(
   const base = baseUrl.replace(/\/+$/, '');
   const opts = { method: 'GET' as const, headers: { Authorization: authHeader } };
   let lastStatus = 0;
+  let lastError: string | undefined;
   for (const fileName of LOGO_FILES) {
     const url = `${base}/${encodeURIComponent(folderName)}/${fileName}`;
     try {
@@ -98,14 +97,21 @@ export async function fetchLogoFromAkpaFolder(
         return { body: buf, contentType };
       }
       lastStatus = res.status;
-    } catch {
+      onStatus?.('akpa logo file', { folder: folderName, fileName, status: res.status });
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      onStatus?.('akpa logo file error', { folder: folderName, fileName, error: lastError });
       continue;
     }
   }
-  if (lastStatus > 0) {
-    onStatus?.('akpa logo file', { folder: folderName, status: lastStatus });
-  }
   const fileNames = await fetchFolderListing(baseUrl, authHeader, folderName, onStatus);
+  if (fileNames.length === 0 && (lastStatus > 0 || lastError)) {
+    onStatus?.('akpa logo final', {
+      folder: folderName,
+      lastStatus: lastStatus || null,
+      lastError: lastError || null,
+    });
+  }
   for (const fileName of fileNames) {
     const url = `${base}/${encodeURIComponent(folderName)}/${encodeURIComponent(fileName)}`;
     try {

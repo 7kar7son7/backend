@@ -129,6 +129,7 @@ export function loadAkpaLogoFolderMap(): AkpaLogoFolderMap {
       if (existsSync(subPath)) {
         const raw = readFileSync(subPath, 'utf8');
         cachedMap = JSON.parse(raw) as AkpaLogoFolderMap;
+        console.warn('[AKPA folder map] załadowano z pliku:', subPath, 'wpisów:', Object.keys(cachedMap).length);
         return cachedMap;
       }
     } catch {
@@ -136,6 +137,7 @@ export function loadAkpaLogoFolderMap(): AkpaLogoFolderMap {
     }
   }
   cachedMap = BUILTIN_FOLDER_MAP;
+  console.warn('[AKPA folder map] używam wbudowanej mapy (brak pliku), wpisów:', Object.keys(cachedMap).length);
   return cachedMap;
 }
 
@@ -155,19 +157,18 @@ export async function getCachedAkpaFolderList(
     const url = `${baseUrl.replace(/\/+$/, '')}/`;
     const res = await fetch(url, { method: 'GET', headers: { Authorization: authHeader } });
     if (!res.ok) {
-      if (typeof process !== 'undefined' && process.env?.LOG_AKPA_FOLDER_LIST) {
-        console.warn(`[AKPA] listowanie folderów: ${res.status} ${res.statusText} (${url})`);
-      }
+      console.warn(`[AKPA folder list] HTTP ${res.status} ${res.statusText} – url=${url.replace(/\/[^/]*$/, '/***')}`);
       return [];
     }
     const html = await res.text();
     const list = parseFolderNamesFromHtml(html);
     folderListCache = { list, at: now };
+    if (list.length > 0) {
+      console.warn('[AKPA folder list] OK – folderów:', list.length);
+    }
     return list;
   } catch (err) {
-    if (typeof process !== 'undefined' && process.env?.LOG_AKPA_FOLDER_LIST) {
-      console.warn('[AKPA] listowanie folderów błąd:', err);
-    }
+    console.warn('[AKPA folder list] błąd:', err instanceof Error ? err.message : err);
     return [];
   }
 }

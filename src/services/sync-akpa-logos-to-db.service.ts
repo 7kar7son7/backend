@@ -142,40 +142,75 @@ export async function fetchAndSaveAkpaLogoForChannel(
     .replace(/\/+$/, '');
   const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? AKPA_LOGOS_DEFAULTS.USER).trim();
   const password = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? AKPA_LOGOS_DEFAULTS.PASSWORD).trim();
-  if (!baseUrl || !user || !password) return null;
+
+  const baseHost = baseUrl ? new URL(baseUrl).host : '';
+  logger.info(
+    { externalId, baseHost, hasUser: !!user, hasPassword: !!password },
+    '[fetchAndSaveAkpaLogo] start',
+  );
+
+  if (!baseUrl || !user || !password) {
+    logger.warn(
+      { hasBase: !!baseUrl, hasUser: !!user, hasPassword: !!password },
+      '[fetchAndSaveAkpaLogo] brak AKPA_LOGOS_BASE_URL/USER/PASSWORD – ustaw na Railway',
+    );
+    return null;
+  }
 
   const ch = await prisma.channel.findUnique({
     where: { externalId },
     select: { id: true, name: true },
   });
   if (!ch) {
-    logger.debug({ externalId }, 'fetchAndSaveAkpaLogo: channel not found');
+    logger.warn({ externalId }, '[fetchAndSaveAkpaLogo] channel not found in DB');
     return null;
   }
 
   const authHeader = 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64');
+  logger.info({ externalId }, '[fetchAndSaveAkpaLogo] getting folder list from AKPA...');
   const folderList = await getCachedAkpaFolderList(baseUrl, authHeader);
+  logger.info(
+    { externalId, folderListLength: folderList.length },
+    folderList.length === 0
+      ? '[fetchAndSaveAkpaLogo] folder list PUSTA (listowanie logotypy.akpa.pl zwróciło [] – 401? 404?)'
+      : '[fetchAndSaveAkpaLogo] folder list OK',
+  );
+
   const folderMap = loadAkpaLogoFolderMap();
+  const mapSize = Object.keys(folderMap).length;
   const mappedFolder = folderMap[externalId];
   const runtimeFolder = folderList.length > 0 ? findBestFolder(ch.name, folderList) : null;
   const nameFolder = channelNameToFolderCandidate(ch.name);
   const folder = mappedFolder ?? runtimeFolder ?? nameFolder ?? null;
+  const folderSource = mappedFolder ? 'map' : runtimeFolder ? 'runtime' : nameFolder ? 'name' : 'none';
+  logger.info(
+    { externalId, folderMapSize: mapSize, mappedFolder: !!mappedFolder, folder, folderSource },
+    '[fetchAndSaveAkpaLogo] folder resolved',
+  );
+
   if (!folder) {
     logger.warn(
-      { externalId, channelName: ch.name, hasFolderMap: !!mappedFolder, folderListLength: folderList.length },
-      'fetchAndSaveAkpaLogo: no folder (sprawdź akpa-logo-folder-map.json i listowanie logotypy.akpa.pl)',
+      { externalId, channelName: ch.name, hasMappedFolder: !!mappedFolder, folderListLength: folderList.length },
+      '[fetchAndSaveAkpaLogo] no folder – brak w mapie i listowanie puste',
     );
     return null;
   }
 
-  let result = await fetchLogoFromAkpaFolder(baseUrl, authHeader, folder, (msg, meta) => {
-    logger.debug(meta ?? {}, msg);
-  });
+  const logAkpaStatus = (msg: string, meta?: Record<string, unknown>) => {
+    const status = meta?.status as number | undefined;
+    const err = meta?.error;
+    if (typeof status === 'number' && (status >= 400 || status < 200)) {
+      logger.warn({ ...meta, externalId, folder }, `[fetchAndSaveAkpaLogo] ${msg} status=${status}`);
+    } else if (err) {
+      logger.warn({ ...meta, externalId, folder }, `[fetchAndSaveAkpaLogo] ${msg} error=${String(err)}`);
+    } else {
+      logger.info(meta ?? {}, `[fetchAndSaveAkpaLogo] ${msg}`);
+    }
+  };
+  logger.info({ externalId, folder, baseHost }, '[fetchAndSaveAkpaLogo] fetch logo from main URL...');
+  let result = await fetchLogoFromAkpaFolder(baseUrl, authHeader, folder, logAkpaStatus);
   if (!result) {
-    logger.debug(
-      { externalId, folder },
-      'fetchAndSaveAkpaLogo: główny URL nie zwrócił logo, próbuję NEW_BASE',
-    );
+    logger.info({ externalId, folder }, '[fetchAndSaveAkpaLogo] main URL null, trying NEW_BASE');
     const newBase = (
       env.AKPA_LOGOS_NEW_BASE_URL ??
       process.env.AKPA_LOGOS_NEW_BASE_URL ??
@@ -187,19 +222,19 @@ export async function fetchAndSaveAkpaLogoForChannel(
     const newPassword = (env.AKPA_LOGOS_NEW_PASSWORD ?? process.env.AKPA_LOGOS_NEW_PASSWORD ?? AKPA_LOGOS_DEFAULTS.NEW_PASSWORD).trim();
     if (newBase && newUser && newPassword) {
       const newAuth = 'Basic ' + Buffer.from(`${newUser}:${newPassword}`).toString('base64');
-      result = await fetchLogoFromAkpaFolder(newBase, newAuth, folder, () => {});
+      result = await fetchLogoFromAkpaFolder(newBase, newAuth, folder, logAkpaStatus);
     }
   }
   if (!result) {
     logger.warn(
-      { externalId, folder },
-      'fetchAndSaveAkpaLogo: nie udało się pobrać logo z AKPA (sprawdź dostęp do logotypy.akpa.pl)',
+      { externalId, folder, baseHost },
+      '[fetchAndSaveAkpaLogo] NULL – nie udało się pobrać (sprawdź wyżej: status 401/404? timeout?)',
     );
     return null;
   }
 
+  logger.info({ externalId, folder, bodyLength: result.body?.length }, '[fetchAndSaveAkpaLogo] OK – zwracam logo');
   const body = Buffer.isBuffer(result.body) ? result.body : Buffer.from(result.body);
-  // Zawsze zwracaj obrazek – zapis do bazy w tle (nawet gdy save się nie uda, klient dostanie logo)
   setImmediate(() => {
     prisma.channel
       .update({
@@ -210,8 +245,8 @@ export async function fetchAndSaveAkpaLogoForChannel(
           logoContentType: result.contentType,
         },
       })
-      .then(() => logger.debug({ externalId }, 'fetchAndSaveAkpaLogo: zapisano do bazy'))
-      .catch((err) => logger.warn({ err, externalId }, 'fetchAndSaveAkpaLogo: błąd zapisu do bazy (logo i tak zwrócone)'));
+      .then(() => logger.info({ externalId }, '[fetchAndSaveAkpaLogo] zapisano do bazy'))
+      .catch((err) => logger.warn({ err, externalId }, '[fetchAndSaveAkpaLogo] błąd zapisu do bazy'));
   });
   return { body, contentType: result.contentType };
 }

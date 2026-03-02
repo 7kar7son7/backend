@@ -153,20 +153,24 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
   app.get('/akpa/:channelId', async (request, reply) => {
     const channelId = (request.params as { channelId: string }).channelId;
     if (!channelId || !safeChannelId(channelId)) {
+      app.log.info({ channelId }, '[logo] 400 invalid id');
       return reply.code(400).send({ error: 'Invalid channel id' });
     }
     const fromStatic = readLogoFromStatic(channelId);
     if (fromStatic) {
+      app.log.info({ channelId }, '[logo] 200 from static/embedded');
       return reply
         .header('Cache-Control', 'public, max-age=86400')
         .type(fromStatic.contentType)
         .send(fromStatic.body);
     }
+    app.log.info({ channelId }, '[logo] static miss, reading DB');
     const channel = await app.prisma.channel.findUnique({
       where: { externalId: channelId },
       select: { logoData: true, logoContentType: true, name: true },
     });
     if (!channel) {
+      app.log.warn({ channelId }, '[logo] 404 channel not in DB');
       return reply.code(404).send({ error: 'Logo not found' });
     }
     let data: Buffer | Uint8Array | null = channel.logoData as Buffer | Uint8Array | null;
@@ -176,6 +180,7 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
       ((Buffer.isBuffer(data) && data.length > 0) || (data instanceof Uint8Array && data.length > 0));
 
     if (!hasData) {
+      app.log.info({ channelId }, '[logo] no logoData from Prisma, trying raw SQL');
       const raw = await app.prisma.$queryRaw<Array<Record<string, unknown>>>(
         Prisma.sql`SELECT "logoData", "logoContentType" FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
       );
@@ -194,19 +199,26 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
       data != null &&
       ((Buffer.isBuffer(data) && data.length > 0) || (data instanceof Uint8Array && data.length > 0));
     if (hasDataNow && data) {
+      app.log.info({ channelId }, '[logo] 200 from DB');
       const body: Buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as Uint8Array);
       return reply
         .header('Cache-Control', 'public, max-age=86400')
         .type(contentType)
         .send(body);
     }
+    app.log.info({ channelId, channelName: channel.name }, '[logo] no DB logo, calling fetchAndSaveAkpaLogo');
     const fetched = await fetchAndSaveAkpaLogoForChannel(app.prisma, app.log, channelId);
     if (fetched) {
+      app.log.info({ channelId }, '[logo] 200 from AKPA fetch');
       return reply
         .header('Cache-Control', 'public, max-age=86400')
         .type(fetched.contentType)
         .send(fetched.body);
     }
+    app.log.warn(
+      { channelId },
+      '[logo] fetchAndSaveAkpaLogo returned null – sprawdź logi fetchAndSaveAkpaLogo (credentials, folder, HTTP status)',
+    );
     const staticDir = getStaticLogosDir();
     const exts = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
     const baseNames = [channelId];
@@ -218,12 +230,14 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
       for (const ext of exts) {
         const filePath = join(staticDir, `${base}${ext}`);
         if (existsSync(filePath)) {
+          app.log.info({ channelId, filePath }, '[logo] 200 from static dir file');
           const body = readFileSync(filePath);
           const ct = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : 'image/webp';
           return reply.header('Cache-Control', 'public, max-age=86400').type(ct).send(body);
         }
       }
     }
+    app.log.warn({ channelId, staticDir, baseNames }, '[logo] 404 final – brak wszędzie');
     return reply.code(404).send({ error: 'Logo not found' });
   });
 });
