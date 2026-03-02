@@ -115,7 +115,7 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     });
   });
 
-  /** GET /logos/akpa/:channelId – z bazy; gdy brak logoData, próba pobrania z AKPA i zapis do bazy (fallback). */
+  /** GET /logos/akpa/:channelId – z bazy (Prisma); gdy brak logoData, próba pobrania z AKPA i zapis (fallback). */
   app.get('/akpa/:channelId', async (request, reply) => {
     const channelId = (request.params as { channelId: string }).channelId;
     if (!channelId || !safeChannelId(channelId)) {
@@ -123,37 +123,32 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     }
     const channel = await app.prisma.channel.findUnique({
       where: { externalId: channelId },
-      select: { logoContentType: true },
+      select: { logoData: true, logoContentType: true },
     });
     if (!channel) {
       return reply.code(404).send({ error: 'Logo not found' });
     }
-    const hexRow = await app.prisma.$queryRaw<Array<Record<string, unknown>>>(
-      Prisma.sql`SELECT encode("logoData", 'hex') as hex_data, "logoContentType" as logo_content_type FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
-    );
-    const row = hexRow[0];
-    let hexVal = row ? rowVal<string>(row, 'hex_data', 'hex_data') : null;
-    let ctVal = row ? rowVal<unknown>(row, 'logo_content_type', 'logo_content_type') : null;
-    let hexStr = hexVal == null ? '' : Buffer.isBuffer(hexVal) ? hexVal.toString('utf8') : String(hexVal).trim();
-    if (hexStr.length === 0) {
-      const fetched = await fetchAndSaveAkpaLogoForChannel(app.prisma, app.log, channelId);
-      if (fetched) {
-        return reply
-          .header('Cache-Control', 'public, max-age=86400')
-          .type(fetched.contentType)
-          .send(fetched.body);
-      }
-      return reply.code(404).send({ error: 'Logo not found' });
+    const data = channel.logoData;
+    const hasData =
+      data != null &&
+      ((Buffer.isBuffer(data) && data.length > 0) || (data instanceof Uint8Array && data.length > 0));
+    if (hasData) {
+      const body = Buffer.isBuffer(data) ? data : Buffer.from(data);
+      const contentType =
+        (channel.logoContentType?.trim() || '') !== '' ? channel.logoContentType!.trim() : 'image/png';
+      return reply
+        .header('Cache-Control', 'public, max-age=86400')
+        .type(contentType)
+        .send(body);
     }
-    const buf = Buffer.from(hexStr, 'hex');
-    if (buf.length === 0) {
-      return reply.code(404).send({ error: 'Logo not found' });
+    const fetched = await fetchAndSaveAkpaLogoForChannel(app.prisma, app.log, channelId);
+    if (fetched) {
+      return reply
+        .header('Cache-Control', 'public, max-age=86400')
+        .type(fetched.contentType)
+        .send(fetched.body);
     }
-    const contentType = (ctVal != null && String(ctVal).trim()) ? String(ctVal).trim() : 'image/png';
-    return reply
-      .header('Cache-Control', 'public, max-age=86400')
-      .type(contentType)
-      .send(buf);
+    return reply.code(404).send({ error: 'Logo not found' });
   });
 });
 
