@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
+import { readLogoFromStatic } from '../utils/static-logos';
 import { ChannelService } from '../services/channel.service';
 import { ProgramService } from '../services/program.service';
 
@@ -85,6 +86,12 @@ export default async function channelsRoutes(app: FastifyInstance) {
         base.logoBase64 =
           Buffer.isBuffer(logoData) ? logoData.toString('base64') : Buffer.from(logoData).toString('base64');
         base.logoContentType = logoContentType;
+      } else if (String(channel.externalId ?? '').startsWith('akpa_')) {
+        const fromStatic = readLogoFromStatic(String(channel.externalId));
+        if (fromStatic) {
+          base.logoBase64 = fromStatic.body.toString('base64');
+          base.logoContentType = fromStatic.contentType;
+        }
       }
 
       if (!includePrograms) {

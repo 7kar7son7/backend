@@ -1,17 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { FastifyInstance } from 'fastify';
-
-/** Katalog static/logos/akpa – z katalogu nad dist (Docker) lub cwd. */
-function getStaticLogosDir(): string {
-  try {
-    const fromDist = join(__dirname, '..', '..', 'static', 'logos', 'akpa');
-    if (existsSync(fromDist)) return fromDist;
-  } catch {
-    // ignore
-  }
-  return join(process.cwd(), 'static', 'logos', 'akpa');
-}
+import { getStaticLogosDir, readLogoFromStatic, getStaticLogosDebug } from '../utils/static-logos';
 import fp from 'fastify-plugin';
 import { Prisma } from '@prisma/client';
 
@@ -128,21 +118,30 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     });
   });
 
+  /** Diagnostyka: GET /logos/debug/static – ścieżki i czy katalog static istnieje (na produkcji). */
+  app.get('/debug/static', async (_request, reply) => {
+    const debug = getStaticLogosDebug();
+    return reply.send({
+      ok: true,
+      ...debug,
+      message: debug.cwdExists || debug.fromDistExists
+        ? (debug.sampleExists ? 'Static OK – logotypy powinny się serwować.' : 'Katalog istnieje, brak pliku akpa_85 – sprawdź zawartość.')
+        : 'Brak katalogu static/logos/akpa – sprawdź COPY w Dockerfile i deploy.',
+    });
+  });
+
   /** GET /logos/akpa/:channelId – najpierw static (szybko), potem baza, na końcu fetch z AKPA. */
   app.get('/akpa/:channelId', async (request, reply) => {
     const channelId = (request.params as { channelId: string }).channelId;
     if (!channelId || !safeChannelId(channelId)) {
       return reply.code(400).send({ error: 'Invalid channel id' });
     }
-    const exts = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
-    const staticDir = getStaticLogosDir();
-    for (const ext of exts) {
-      const filePath = join(staticDir, `${channelId}${ext}`);
-      if (existsSync(filePath)) {
-        const body = readFileSync(filePath);
-        const ct = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : 'image/webp';
-        return reply.header('Cache-Control', 'public, max-age=86400').type(ct).send(body);
-      }
+    const fromStatic = readLogoFromStatic(channelId);
+    if (fromStatic) {
+      return reply
+        .header('Cache-Control', 'public, max-age=86400')
+        .type(fromStatic.contentType)
+        .send(fromStatic.body);
     }
     const channel = await app.prisma.channel.findUnique({
       where: { externalId: channelId },
@@ -189,6 +188,8 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
         .type(fetched.contentType)
         .send(fetched.body);
     }
+    const staticDir = getStaticLogosDir();
+    const exts = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
     const baseNames = [channelId];
     if (channel.name?.trim()) {
       const nameSlug = channel.name.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_-]/g, '');
