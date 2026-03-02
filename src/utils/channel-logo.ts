@@ -91,5 +91,8 @@ export function channelLogoUrlForResponse(channel: {
       return `data:${fromStatic.contentType};base64,${fromStatic.body.toString('base64')}`;
     }
   }
-  return resolveChannelLogoUrlForApi(channel);
+  return resolveChannelLogoUrlForApi({
+    externalId: channel.externalId ?? '',
+    logoUrl: channel.logoUrl,
+  });
 }
