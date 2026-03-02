@@ -8,6 +8,8 @@ import { Prisma } from '@prisma/client';
 import { env } from '../config/env';
 import { AKPA_LOGOS_DEFAULTS } from '../config/akpa-logos-defaults';
 import { fetchAndSaveAkpaLogoForChannel } from '../services/sync-akpa-logos-to-db.service';
+import { fetchLogoFromAkpaFolder } from '../services/akpa-logo-fetcher';
+import { loadAkpaLogoFolderMap } from '../utils/akpa-logo-folders';
 
 function safeChannelId(id: string): boolean {
   return /^akpa_[a-zA-Z0-9_]+$/.test(id) && id.length <= 128;
@@ -152,7 +154,7 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
   /** GET /logos/akpa/:channelId – najpierw static (szybko), potem baza, na końcu fetch z AKPA. */
   app.get('/akpa/:channelId', async (request, reply) => {
     const channelId = (request.params as { channelId: string }).channelId;
-    console.log('[LOGO] GET /logos/akpa/' + channelId);
+    app.log.info({ channelId }, '[logo] GET /logos/akpa');
     if (!channelId || !safeChannelId(channelId)) {
       app.log.info({ channelId }, '[logo] 400 invalid id');
       return reply.code(400).send({ error: 'Invalid channel id' });
@@ -171,7 +173,22 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
       select: { logoData: true, logoContentType: true, name: true },
     });
     if (!channel) {
-      app.log.warn({ channelId }, '[logo] 404 channel not in DB');
+      app.log.info({ channelId }, '[logo] channel not in DB – trying AKPA from builtin map');
+      const folderMap = loadAkpaLogoFolderMap();
+      const folder = folderMap[channelId];
+      const baseUrl = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? AKPA_LOGOS_DEFAULTS.BASE_URL).trim().replace(/\/+$/, '');
+      const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? AKPA_LOGOS_DEFAULTS.USER).trim();
+      const password = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? AKPA_LOGOS_DEFAULTS.PASSWORD).trim();
+      if (folder && baseUrl && user && password) {
+        const authHeader = 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64');
+        const result = await fetchLogoFromAkpaFolder(baseUrl, authHeader, folder, (msg, meta) =>
+          app.log.warn({ ...meta, channelId }, `[logo] akpa ${msg}`));
+        if (result) {
+          app.log.info({ channelId, folder }, '[logo] 200 from AKPA (no DB channel)');
+          return reply.header('Cache-Control', 'public, max-age=86400').type(result.contentType).send(result.body);
+        }
+      }
+      app.log.warn({ channelId }, '[logo] 404 channel not in DB and no AKPA fallback');
       return reply.code(404).send({ error: 'Logo not found' });
     }
     let data: Buffer | Uint8Array | null = channel.logoData as Buffer | Uint8Array | null;
