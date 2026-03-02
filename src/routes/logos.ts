@@ -152,8 +152,8 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     const hasDataNow =
       data != null &&
       ((Buffer.isBuffer(data) && data.length > 0) || (data instanceof Uint8Array && data.length > 0));
-    if (hasDataNow) {
-      const body = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    if (hasDataNow && data) {
+      const body: Buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as Uint8Array);
       return reply
         .header('Cache-Control', 'public, max-age=86400')
         .type(contentType)
