@@ -176,13 +176,25 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
       app.log.info({ channelId }, '[logo] channel not in DB – trying AKPA from builtin map');
       const folderMap = loadAkpaLogoFolderMap();
       const folder = folderMap[channelId];
-      const baseUrl = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? AKPA_LOGOS_DEFAULTS.BASE_URL).trim().replace(/\/+$/, '');
-      const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? AKPA_LOGOS_DEFAULTS.USER).trim();
-      const password = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? AKPA_LOGOS_DEFAULTS.PASSWORD).trim();
+      const baseUrlRaw = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? AKPA_LOGOS_DEFAULTS.BASE_URL).trim();
+      const baseUrl = (baseUrlRaw || AKPA_LOGOS_DEFAULTS.BASE_URL).replace(/\/+$/, '');
+      const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? AKPA_LOGOS_DEFAULTS.USER).trim() || AKPA_LOGOS_DEFAULTS.USER;
+      const password = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? AKPA_LOGOS_DEFAULTS.PASSWORD).trim() || AKPA_LOGOS_DEFAULTS.PASSWORD;
       if (folder && baseUrl && user && password) {
         const authHeader = 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64');
-        const result = await fetchLogoFromAkpaFolder(baseUrl, authHeader, folder, (msg, meta) =>
+        let result = await fetchLogoFromAkpaFolder(baseUrl, authHeader, folder, (msg, meta) =>
           app.log.warn({ ...meta, channelId }, `[logo] akpa ${msg}`));
+        if (!result) {
+          const newBaseRaw = (env.AKPA_LOGOS_NEW_BASE_URL ?? process.env.AKPA_LOGOS_NEW_BASE_URL ?? AKPA_LOGOS_DEFAULTS.NEW_BASE_URL).trim();
+          const newBase = (newBaseRaw || AKPA_LOGOS_DEFAULTS.NEW_BASE_URL).replace(/\/+$/, '');
+          const newUser = (env.AKPA_LOGOS_NEW_USER ?? process.env.AKPA_LOGOS_NEW_USER ?? AKPA_LOGOS_DEFAULTS.NEW_USER).trim() || AKPA_LOGOS_DEFAULTS.NEW_USER;
+          const newPassword = (env.AKPA_LOGOS_NEW_PASSWORD ?? process.env.AKPA_LOGOS_NEW_PASSWORD ?? AKPA_LOGOS_DEFAULTS.NEW_PASSWORD).trim() || AKPA_LOGOS_DEFAULTS.NEW_PASSWORD;
+          if (newBase && newUser && newPassword) {
+            const newAuth = 'Basic ' + Buffer.from(`${newUser}:${newPassword}`).toString('base64');
+            result = await fetchLogoFromAkpaFolder(newBase, newAuth, folder, (msg, meta) =>
+              app.log.warn({ ...meta, channelId }, `[logo] akpa new ${msg}`));
+          }
+        }
         if (result) {
           app.log.info({ channelId, folder }, '[logo] 200 from AKPA (no DB channel)');
           return reply.header('Cache-Control', 'public, max-age=86400').type(result.contentType).send(result.body);
