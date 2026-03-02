@@ -1,6 +1,17 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { FastifyInstance } from 'fastify';
+
+/** Katalog static/logos/akpa – z katalogu nad dist (Docker) lub cwd. */
+function getStaticLogosDir(): string {
+  try {
+    const fromDist = join(__dirname, '..', '..', 'static', 'logos', 'akpa');
+    if (existsSync(fromDist)) return fromDist;
+  } catch {
+    // ignore
+  }
+  return join(process.cwd(), 'static', 'logos', 'akpa');
+}
 import fp from 'fastify-plugin';
 import { Prisma } from '@prisma/client';
 
@@ -117,11 +128,21 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     });
   });
 
-  /** GET /logos/akpa/:channelId – z bazy (Prisma); gdy Prisma nie zwróci logoData, fallback na raw SQL (bytea). */
+  /** GET /logos/akpa/:channelId – najpierw static (szybko), potem baza, na końcu fetch z AKPA. */
   app.get('/akpa/:channelId', async (request, reply) => {
     const channelId = (request.params as { channelId: string }).channelId;
     if (!channelId || !safeChannelId(channelId)) {
       return reply.code(400).send({ error: 'Invalid channel id' });
+    }
+    const exts = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+    const staticDir = getStaticLogosDir();
+    for (const ext of exts) {
+      const filePath = join(staticDir, `${channelId}${ext}`);
+      if (existsSync(filePath)) {
+        const body = readFileSync(filePath);
+        const ct = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : 'image/webp';
+        return reply.header('Cache-Control', 'public, max-age=86400').type(ct).send(body);
+      }
     }
     const channel = await app.prisma.channel.findUnique({
       where: { externalId: channelId },
@@ -168,8 +189,6 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
         .type(fetched.contentType)
         .send(fetched.body);
     }
-    const staticDir = join(process.cwd(), 'static', 'logos', 'akpa');
-    const exts = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
     const baseNames = [channelId];
     if (channel.name?.trim()) {
       const nameSlug = channel.name.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_-]/g, '');
