@@ -152,6 +152,7 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
   /** GET /logos/akpa/:channelId – najpierw static (szybko), potem baza, na końcu fetch z AKPA. */
   app.get('/akpa/:channelId', async (request, reply) => {
     const channelId = (request.params as { channelId: string }).channelId;
+    console.log('[LOGO] GET /logos/akpa/' + channelId);
     if (!channelId || !safeChannelId(channelId)) {
       app.log.info({ channelId }, '[logo] 400 invalid id');
       return reply.code(400).send({ error: 'Invalid channel id' });
