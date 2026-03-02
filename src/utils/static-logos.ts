@@ -1,7 +1,26 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { EMBEDDED_AKPA_LOGOS } from '../data/embedded-akpa-logos';
+type EmbeddedEntry = { contentType: string; base64: string };
+let embeddedLogosCache: Record<string, EmbeddedEntry> | null = null;
+
+/** Lazy-load dużej mapy embedded (46MB), żeby nie ładować jej przy starcie serwera (OOM na Railway). */
+function getEmbeddedLogos(): Record<string, EmbeddedEntry> {
+  if (embeddedLogosCache === null) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mod = require('../data/embedded-akpa-logos');
+      embeddedLogosCache = mod.EMBEDDED_AKPA_LOGOS ?? {};
+    } catch (e) {
+      console.warn('[logos] Failed to load embedded-akpa-logos (file missing or OOM):', e instanceof Error ? e.message : e);
+      embeddedLogosCache = {};
+    }
+    if (Object.keys(embeddedLogosCache).length === 0) {
+      console.warn('[logos] Embedded logos map is empty – upewnij się, że src/data/embedded-akpa-logos.ts jest w repo i w buildzie (npm run logos:embed).');
+    }
+  }
+  return embeddedLogosCache;
+}
 
 const EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'] as const;
 
@@ -32,7 +51,7 @@ export function getStaticLogosDir(): string {
  */
 export function readLogoFromStatic(channelId: string): { body: Buffer; contentType: string } | null {
   if (!/^akpa_[a-zA-Z0-9_]+$/.test(channelId) || channelId.length > 128) return null;
-  const embedded = EMBEDDED_AKPA_LOGOS[channelId];
+  const embedded = getEmbeddedLogos()[channelId];
   if (embedded) {
     return {
       body: Buffer.from(embedded.base64, 'base64'),
