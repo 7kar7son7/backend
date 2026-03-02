@@ -63,7 +63,16 @@ export default async function channelsRoutes(app: FastifyInstance) {
 
     const formattedChannels = channels.map((channel) => {
       const resolvedLogoUrl = resolveChannelLogoUrlForApi(channel);
-      const base = {
+      const logoData = channel.logoData;
+      const hasLogoData =
+        logoData != null &&
+        ((Buffer.isBuffer(logoData) && logoData.length > 0) ||
+          (logoData instanceof Uint8Array && logoData.length > 0));
+      const logoContentType =
+        channel.logoContentType != null && String(channel.logoContentType).trim() !== ''
+          ? String(channel.logoContentType).trim()
+          : null;
+      const base: Record<string, unknown> = {
         id: String(channel.id),
         externalId: String(channel.externalId),
         name: String(channel.name),
@@ -72,6 +81,11 @@ export default async function channelsRoutes(app: FastifyInstance) {
         category: channel.category != null ? String(channel.category) : null,
         countryCode: channel.countryCode != null ? String(channel.countryCode) : null,
       };
+      if (hasLogoData && logoContentType) {
+        base.logoBase64 =
+          Buffer.isBuffer(logoData) ? logoData.toString('base64') : Buffer.from(logoData).toString('base64');
+        base.logoContentType = logoContentType;
+      }
 
       if (!includePrograms) {
         return base;
