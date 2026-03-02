@@ -1,6 +1,6 @@
 import { FollowType, PrismaClient } from '@prisma/client';
 
-import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
+import { channelLogoUrlForResponse } from '../utils/channel-logo';
 
 export class FollowService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -37,7 +37,7 @@ export class FollowService {
             externalId: item.channel.externalId,
             name: item.channel.name,
             description: item.channel.description,
-            logoUrl: resolveChannelLogoUrlForApi(item.channel),
+            logoUrl: channelLogoUrlForResponse(item.channel),
             category: item.channel.category,
             countryCode: item.channel.countryCode,
           },
@@ -53,7 +53,7 @@ export class FollowService {
             externalId: item.program.channel.externalId,
             name: item.program.channel.name,
             description: item.program.channel.description,
-            logoUrl: resolveChannelLogoUrlForApi(item.program.channel),
+            logoUrl: channelLogoUrlForResponse(item.program.channel),
             category: item.program.channel.category,
             countryCode: item.program.channel.countryCode,
           } : null,
@@ -62,7 +62,7 @@ export class FollowService {
             title: item.program.title,
             channelId: item.program.channelId,
             channelName: item.program.channel?.name ?? item.program.channelId ?? 'Nieznany kanał',
-            channelLogoUrl: item.program.channel ? resolveChannelLogoUrlForApi(item.program.channel) : null,
+            channelLogoUrl: item.program.channel ? channelLogoUrlForResponse(item.program.channel) : null,
             description: item.program.description,
             seasonNumber: item.program.seasonNumber,
             episodeNumber: item.program.episodeNumber,

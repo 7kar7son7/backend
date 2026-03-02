@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import { env } from '../config/env';
 import { AKPA_LOGOS_DEFAULTS } from '../config/akpa-logos-defaults';
 import { fetchAndSaveAkpaLogoForChannel } from '../services/sync-akpa-logos-to-db.service';
+import { EMBEDDED_AKPA_LOGOS_COUNT } from '../data/embedded-akpa-logos';
 
 function safeChannelId(id: string): boolean {
   return /^akpa_[a-zA-Z0-9_]+$/.test(id) && id.length <= 128;
@@ -115,6 +116,18 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
       hexLength,
       name: ch?.name ?? null,
       akpaLogosConfigured: !!(baseUrl && user && password),
+    });
+  });
+
+  /** Diagnostyka: GET /logos/debug/embedded – czy build ma wbudowaną mapę logotypów (na produkcji: 59 = OK). */
+  app.get('/debug/embedded', async (_request, reply) => {
+    return reply.send({
+      ok: true,
+      embeddedLogosCount: EMBEDDED_AKPA_LOGOS_COUNT,
+      message:
+        EMBEDDED_AKPA_LOGOS_COUNT >= 59
+          ? 'Embedded logos OK – GET /logos/akpa/:id powinien serwować z mapy.'
+          : `Tylko ${EMBEDDED_AKPA_LOGOS_COUNT} w mapie – sprawdź npm run logos:embed i deploy.`,
     });
   });
 

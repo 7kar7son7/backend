@@ -1,4 +1,5 @@
 import { env } from '../config/env';
+import { readLogoFromStatic } from './static-logos';
 
 /**
  * Mapowanie logo kanału: każdy kanał AKPA ma URL /logos/akpa/{externalId} (logotypy w bazie w logoData).
@@ -58,4 +59,37 @@ export function resolveChannelLogoUrlForApi(channel: {
     return full.startsWith('http://') ? full.replace(/^http:\/\//, 'https://') : full;
   }
   return path;
+}
+
+/**
+ * Jak w starym EPG: zwraca logoUrl gotowy do wyświetlenia – data URL gdy mamy bajty (z bazy lub embedded),
+ * zero requestów do GET /logos/akpa/. Gdy brak bajtów – fallback na resolveChannelLogoUrlForApi.
+ */
+export function channelLogoUrlForResponse(channel: {
+  externalId: string | null;
+  logoUrl: string | null;
+  logoData?: unknown;
+  logoContentType?: string | null;
+}): string | null {
+  const logoData = channel.logoData;
+  const hasLogoData =
+    logoData != null &&
+    ((Buffer.isBuffer(logoData) && logoData.length > 0) ||
+      (logoData instanceof Uint8Array && logoData.length > 0));
+  const logoContentType =
+    channel.logoContentType != null && String(channel.logoContentType).trim() !== ''
+      ? String(channel.logoContentType).trim()
+      : null;
+  if (hasLogoData && logoContentType) {
+    const b64 =
+      Buffer.isBuffer(logoData) ? logoData.toString('base64') : Buffer.from(logoData as Uint8Array).toString('base64');
+    return `data:${logoContentType};base64,${b64}`;
+  }
+  if (String(channel.externalId ?? '').startsWith('akpa_')) {
+    const fromStatic = readLogoFromStatic(String(channel.externalId));
+    if (fromStatic) {
+      return `data:${fromStatic.contentType};base64,${fromStatic.body.toString('base64')}`;
+    }
+  }
+  return resolveChannelLogoUrlForApi(channel);
 }

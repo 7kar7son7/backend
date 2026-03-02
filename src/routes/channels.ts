@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
+import { channelLogoUrlForResponse, resolveChannelLogoUrlForApi } from '../utils/channel-logo';
 import { readLogoFromStatic } from '../utils/static-logos';
 import { ChannelService } from '../services/channel.service';
 import { ProgramService } from '../services/program.service';
@@ -63,7 +63,6 @@ export default async function channelsRoutes(app: FastifyInstance) {
     );
 
     const formattedChannels = channels.map((channel) => {
-      const resolvedLogoUrl = resolveChannelLogoUrlForApi(channel);
       const logoData = channel.logoData;
       const hasLogoData =
         logoData != null &&
@@ -73,6 +72,24 @@ export default async function channelsRoutes(app: FastifyInstance) {
         channel.logoContentType != null && String(channel.logoContentType).trim() !== ''
           ? String(channel.logoContentType).trim()
           : null;
+      let logoBase64: string | null = null;
+      let contentType: string | null = null;
+      if (hasLogoData && logoContentType) {
+        logoBase64 =
+          Buffer.isBuffer(logoData) ? logoData.toString('base64') : Buffer.from(logoData).toString('base64');
+        contentType = logoContentType;
+      } else if (String(channel.externalId ?? '').startsWith('akpa_')) {
+        const fromStatic = readLogoFromStatic(String(channel.externalId));
+        if (fromStatic) {
+          logoBase64 = fromStatic.body.toString('base64');
+          contentType = fromStatic.contentType;
+        }
+      }
+      // Jak w starym EPG: logoUrl to gotowy URL do wyświetlenia – data URL gdy mamy bajty (zero requestów do /logos/akpa/)
+      const resolvedLogoUrl =
+        logoBase64 && contentType
+          ? `data:${contentType};base64,${logoBase64}`
+          : resolveChannelLogoUrlForApi(channel);
       const base: Record<string, unknown> = {
         id: String(channel.id),
         externalId: String(channel.externalId),
@@ -82,16 +99,9 @@ export default async function channelsRoutes(app: FastifyInstance) {
         category: channel.category != null ? String(channel.category) : null,
         countryCode: channel.countryCode != null ? String(channel.countryCode) : null,
       };
-      if (hasLogoData && logoContentType) {
-        base.logoBase64 =
-          Buffer.isBuffer(logoData) ? logoData.toString('base64') : Buffer.from(logoData).toString('base64');
-        base.logoContentType = logoContentType;
-      } else if (String(channel.externalId ?? '').startsWith('akpa_')) {
-        const fromStatic = readLogoFromStatic(String(channel.externalId));
-        if (fromStatic) {
-          base.logoBase64 = fromStatic.body.toString('base64');
-          base.logoContentType = fromStatic.contentType;
-        }
+      if (logoBase64 && contentType) {
+        base.logoBase64 = logoBase64;
+        base.logoContentType = contentType;
       }
 
       if (!includePrograms) {
@@ -131,7 +141,7 @@ export default async function channelsRoutes(app: FastifyInstance) {
       return reply.notFound('Channel not found');
     }
 
-    const logoUrl = resolveChannelLogoUrlForApi(channel);
+    const logoUrl = channelLogoUrlForResponse(channel);
     return { data: { ...channel, logoUrl } };
   });
 
@@ -157,7 +167,7 @@ export default async function channelsRoutes(app: FastifyInstance) {
       filter,
     );
 
-    const logoUrl = resolveChannelLogoUrlForApi(channel);
+    const logoUrl = channelLogoUrlForResponse(channel);
     return {
       data: {
         channel: { ...channel, logoUrl },
