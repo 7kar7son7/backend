@@ -199,17 +199,19 @@ export async function fetchAndSaveAkpaLogoForChannel(
   }
 
   const body = Buffer.isBuffer(result.body) ? result.body : Buffer.from(result.body);
-  try {
-    await prisma.channel.update({
-      where: { id: ch.id },
-      data: {
-        logoUrl: `/logos/akpa/${externalId}`,
-        logoData: new Uint8Array(body),
-        logoContentType: result.contentType,
-      },
-    });
-  } catch {
-    return null;
-  }
+  // Zawsze zwracaj obrazek – zapis do bazy w tle (nawet gdy save się nie uda, klient dostanie logo)
+  setImmediate(() => {
+    prisma.channel
+      .update({
+        where: { id: ch.id },
+        data: {
+          logoUrl: `/logos/akpa/${externalId}`,
+          logoData: new Uint8Array(body),
+          logoContentType: result.contentType,
+        },
+      })
+      .then(() => logger.debug({ externalId }, 'fetchAndSaveAkpaLogo: zapisano do bazy'))
+      .catch((err) => logger.warn({ err, externalId }, 'fetchAndSaveAkpaLogo: błąd zapisu do bazy (logo i tak zwrócone)'));
+  });
   return { body, contentType: result.contentType };
 }

@@ -87,11 +87,29 @@ export function findBestFolder(channelName: string, folderList: string[]): strin
 
 export type AkpaLogoFolderMap = Record<string, string>;
 
+/** Wbudowana mapa (fallback gdy plik nie istnieje, np. na Railway). */
+const BUILTIN_FOLDER_MAP: AkpaLogoFolderMap = {
+  akpa_498: 'romance tv', akpa_112: 'amc', akpa_513: 'paramount network', akpa_387: 'warner tv',
+  akpa_466: 'id', akpa_725: 'super polsat', akpa_841: 'polsat rodzina', akpa_358: 'cinemax2',
+  akpa_435: 'tvp hd', akpa_359: 'polsat comedy central extra', akpa_240: 'tvn fabuła', akpa_85: 'ale kino+',
+  akpa_508: 'itvn', akpa_366: 'axn white', akpa_367: 'axn black', akpa_936: 'novelas+', akpa_633: 'stopklatka',
+  akpa_1111: 'polsat film 2', akpa_268: 'tv 6', akpa_147: 'axn', akpa_1112: 'polsat reality',
+  akpa_343: 'tvp kultura', akpa_477: 'polsat film', akpa_75: '13 ulica', akpa_528: 'axn spin',
+  akpa_333: 'tvn style', akpa_382: 'fx comedy', akpa_1: 'tvp 1', akpa_800: 'ttv', akpa_753: 'metro',
+  akpa_597: 'polsat seriale', akpa_3: 'tvp polonia', akpa_2: 'tvp 2', akpa_495: 'fx', akpa_5: 'polsat',
+  akpa_497: 'tvp seriale', akpa_6: 'polsat 2', akpa_756: 'wp', akpa_7: 'tvn 7', akpa_403: 'kino tv',
+  akpa_273: 'novelas+', akpa_174: 'ci polsat', akpa_17: 'tvn', akpa_18: 'tv 4', akpa_720: 'zoom tv',
+  akpa_11: 'tv puls', akpa_721: 'nowa tv', akpa_310: 'novela tv', akpa_941: 'sundance tv', akpa_4: 'kino polska',
+  akpa_405: 'filmbox premium hd', akpa_406: 'filmbox extra hd', akpa_807: 'epic drama', akpa_631: 'filmbox arthouse',
+  akpa_438: 'filmbox family', akpa_280: 'puls 2', akpa_412: 'sci fi', akpa_417: 'tvs', akpa_640: 'fokus tv',
+  akpa_36: 'cinemax',
+};
+
 let cachedMap: AkpaLogoFolderMap | null = null;
 
 const MAP_FILENAME = 'akpa-logo-folder-map.json';
 
-/** Ładuje mapowanie externalId → nazwa folderu AKPA (z pliku wygenerowanego przez logos:download:akpa). */
+/** Ładuje mapowanie externalId → nazwa folderu AKPA (z pliku lub wbudowanej mapy). */
 export function loadAkpaLogoFolderMap(): AkpaLogoFolderMap {
   if (cachedMap) return cachedMap;
   const cwd = process.cwd();
@@ -117,7 +135,7 @@ export function loadAkpaLogoFolderMap(): AkpaLogoFolderMap {
       // ignore
     }
   }
-  cachedMap = {};
+  cachedMap = BUILTIN_FOLDER_MAP;
   return cachedMap;
 }
 
@@ -136,12 +154,20 @@ export async function getCachedAkpaFolderList(
   try {
     const url = `${baseUrl.replace(/\/+$/, '')}/`;
     const res = await fetch(url, { method: 'GET', headers: { Authorization: authHeader } });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      if (typeof process !== 'undefined' && process.env?.LOG_AKPA_FOLDER_LIST) {
+        console.warn(`[AKPA] listowanie folderów: ${res.status} ${res.statusText} (${url})`);
+      }
+      return [];
+    }
     const html = await res.text();
     const list = parseFolderNamesFromHtml(html);
     folderListCache = { list, at: now };
     return list;
-  } catch {
-    return folderListCache?.list ?? [];
+  } catch (err) {
+    if (typeof process !== 'undefined' && process.env?.LOG_AKPA_FOLDER_LIST) {
+      console.warn('[AKPA] listowanie folderów błąd:', err);
+    }
+    return [];
   }
 }
