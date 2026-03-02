@@ -1,6 +1,8 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { EMBEDDED_AKPA_LOGOS } from '../data/embedded-akpa-logos';
+
 const EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'] as const;
 
 function contentTypeForExt(ext: string): string {
@@ -26,10 +28,17 @@ export function getStaticLogosDir(): string {
 }
 
 /**
- * Odczyt logo z pliku static (akpa_XXX.png/jpg). Zwraca null gdy brak pliku.
+ * Odczyt logo: najpierw z wbudowanej mapy (działa na Railway bez static/), potem z plików.
  */
 export function readLogoFromStatic(channelId: string): { body: Buffer; contentType: string } | null {
   if (!/^akpa_[a-zA-Z0-9_]+$/.test(channelId) || channelId.length > 128) return null;
+  const embedded = EMBEDDED_AKPA_LOGOS[channelId];
+  if (embedded) {
+    return {
+      body: Buffer.from(embedded.base64, 'base64'),
+      contentType: embedded.contentType,
+    };
+  }
   const dir = getStaticLogosDir();
   for (const ext of EXTENSIONS) {
     const filePath = join(dir, `${channelId}${ext}`);
