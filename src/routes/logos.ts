@@ -115,7 +115,7 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     });
   });
 
-  /** GET /logos/akpa/:channelId – z bazy (Prisma); gdy brak logoData, próba pobrania z AKPA i zapis (fallback). */
+  /** GET /logos/akpa/:channelId – z bazy (Prisma); gdy Prisma nie zwróci logoData, fallback na raw SQL (bytea). */
   app.get('/akpa/:channelId', async (request, reply) => {
     const channelId = (request.params as { channelId: string }).channelId;
     if (!channelId || !safeChannelId(channelId)) {
@@ -128,14 +128,32 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     if (!channel) {
       return reply.code(404).send({ error: 'Logo not found' });
     }
-    const data = channel.logoData;
+    let data: Buffer | Uint8Array | null = channel.logoData as Buffer | Uint8Array | null;
+    let contentType = (channel.logoContentType?.trim() || '') !== '' ? channel.logoContentType!.trim() : 'image/png';
     const hasData =
       data != null &&
       ((Buffer.isBuffer(data) && data.length > 0) || (data instanceof Uint8Array && data.length > 0));
-    if (hasData) {
+
+    if (!hasData) {
+      const raw = await app.prisma.$queryRaw<Array<Record<string, unknown>>>(
+        Prisma.sql`SELECT "logoData", "logoContentType" FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
+      );
+      const row = raw[0];
+      if (row) {
+        const rawData = rowVal<unknown>(row, 'logoData', 'logodata');
+        const rawCt = rowVal<string>(row, 'logoContentType', 'logocontenttype');
+        if (rawData != null && typeof (rawData as Buffer).length === 'number' && (rawData as Buffer).length > 0) {
+          data = Buffer.isBuffer(rawData) ? rawData : Buffer.from(rawData as ArrayBuffer);
+          if (rawCt && String(rawCt).trim()) contentType = String(rawCt).trim();
+        }
+      }
+    }
+
+    const hasDataNow =
+      data != null &&
+      ((Buffer.isBuffer(data) && data.length > 0) || (data instanceof Uint8Array && data.length > 0));
+    if (hasDataNow) {
       const body = Buffer.isBuffer(data) ? data : Buffer.from(data);
-      const contentType =
-        (channel.logoContentType?.trim() || '') !== '' ? channel.logoContentType!.trim() : 'image/png';
       return reply
         .header('Cache-Control', 'public, max-age=86400')
         .type(contentType)
