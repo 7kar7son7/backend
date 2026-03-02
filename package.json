@@ -4,7 +4,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "rimraf dist && tsc && node -e \"const fs=require('fs'); const p='src/data/akpa-logo-folder-map.json'; if(fs.existsSync(p)){ fs.mkdirSync('data',{recursive:true}); fs.copyFileSync(p,'data/akpa-logo-folder-map.json'); }\"",
+    "build": "rimraf dist && tsc && node -e \"const fs=require('fs'); const p='src/data/akpa-logo-folder-map.json'; if(fs.existsSync(p)){ fs.mkdirSync('dist/data',{recursive:true}); fs.copyFileSync(p,'dist/data/akpa-logo-folder-map.json'); fs.mkdirSync('data',{recursive:true}); fs.copyFileSync(p,'data/akpa-logo-folder-map.json'); }\"",
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

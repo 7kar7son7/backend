@@ -6,19 +6,19 @@ let embeddedLogosCache: Record<string, EmbeddedEntry> | null = null;
 
 /** Lazy-load dużej mapy embedded (46MB), żeby nie ładować jej przy starcie serwera (OOM na Railway). */
 function getEmbeddedLogos(): Record<string, EmbeddedEntry> {
-  if (embeddedLogosCache === null) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const mod = require('../data/embedded-akpa-logos');
-      embeddedLogosCache = mod.EMBEDDED_AKPA_LOGOS ?? {};
-    } catch (e) {
-      console.warn('[logos] Failed to load embedded-akpa-logos (file missing or OOM):', e instanceof Error ? e.message : e);
-      embeddedLogosCache = {};
-    }
-    if (Object.keys(embeddedLogosCache).length === 0) {
-      console.warn('[logos] Embedded logos map is empty – upewnij się, że src/data/embedded-akpa-logos.ts jest w repo i w buildzie (npm run logos:embed).');
-    }
+  if (embeddedLogosCache !== null) return embeddedLogosCache;
+  let map: Record<string, EmbeddedEntry> = {};
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('../data/embedded-akpa-logos');
+    map = (mod.EMBEDDED_AKPA_LOGOS ?? {}) as Record<string, EmbeddedEntry>;
+  } catch (e) {
+    console.warn('[logos] Failed to load embedded-akpa-logos (file missing or OOM):', e instanceof Error ? e.message : e);
   }
+  if (Object.keys(map).length === 0) {
+    console.warn('[logos] Embedded logos map is empty – upewnij się, że src/data/embedded-akpa-logos.ts jest w repo i w buildzie (npm run logos:embed).');
+  }
+  embeddedLogosCache = map;
   return embeddedLogosCache;
 }
 

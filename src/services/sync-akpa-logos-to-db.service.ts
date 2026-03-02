@@ -148,7 +148,10 @@ export async function fetchAndSaveAkpaLogoForChannel(
     where: { externalId },
     select: { id: true, name: true },
   });
-  if (!ch) return null;
+  if (!ch) {
+    logger.debug({ externalId }, 'fetchAndSaveAkpaLogo: channel not found');
+    return null;
+  }
 
   const authHeader = 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64');
   const folderList = await getCachedAkpaFolderList(baseUrl, authHeader);
@@ -157,12 +160,22 @@ export async function fetchAndSaveAkpaLogoForChannel(
   const runtimeFolder = folderList.length > 0 ? findBestFolder(ch.name, folderList) : null;
   const nameFolder = channelNameToFolderCandidate(ch.name);
   const folder = mappedFolder ?? runtimeFolder ?? nameFolder ?? null;
-  if (!folder) return null;
+  if (!folder) {
+    logger.warn(
+      { externalId, channelName: ch.name, hasFolderMap: !!mappedFolder, folderListLength: folderList.length },
+      'fetchAndSaveAkpaLogo: no folder (sprawdź akpa-logo-folder-map.json i listowanie logotypy.akpa.pl)',
+    );
+    return null;
+  }
 
   let result = await fetchLogoFromAkpaFolder(baseUrl, authHeader, folder, (msg, meta) => {
     logger.debug(meta ?? {}, msg);
   });
   if (!result) {
+    logger.debug(
+      { externalId, folder },
+      'fetchAndSaveAkpaLogo: główny URL nie zwrócił logo, próbuję NEW_BASE',
+    );
     const newBase = (
       env.AKPA_LOGOS_NEW_BASE_URL ??
       process.env.AKPA_LOGOS_NEW_BASE_URL ??
@@ -177,7 +190,13 @@ export async function fetchAndSaveAkpaLogoForChannel(
       result = await fetchLogoFromAkpaFolder(newBase, newAuth, folder, () => {});
     }
   }
-  if (!result) return null;
+  if (!result) {
+    logger.warn(
+      { externalId, folder },
+      'fetchAndSaveAkpaLogo: nie udało się pobrać logo z AKPA (sprawdź dostęp do logotypy.akpa.pl)',
+    );
+    return null;
+  }
 
   const body = Buffer.isBuffer(result.body) ? result.body : Buffer.from(result.body);
   try {

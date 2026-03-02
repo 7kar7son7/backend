@@ -95,7 +95,18 @@ const MAP_FILENAME = 'akpa-logo-folder-map.json';
 export function loadAkpaLogoFolderMap(): AkpaLogoFolderMap {
   if (cachedMap) return cachedMap;
   const cwd = process.cwd();
-  for (const subPath of [join(cwd, 'src', 'data', MAP_FILENAME), join(cwd, 'data', MAP_FILENAME)]) {
+  const paths = [
+    join(cwd, 'src', 'data', MAP_FILENAME),
+    join(cwd, 'data', MAP_FILENAME),
+    join(cwd, 'dist', 'data', MAP_FILENAME),
+  ];
+  try {
+    const fromDir = typeof __dirname !== 'undefined' ? join(__dirname, '..', 'data', MAP_FILENAME) : null;
+    if (fromDir) paths.push(fromDir);
+  } catch {
+    // ignore
+  }
+  for (const subPath of paths) {
     try {
       if (existsSync(subPath)) {
         const raw = readFileSync(subPath, 'utf8');
