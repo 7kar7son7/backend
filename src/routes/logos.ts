@@ -1,3 +1,5 @@
+import { readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 import { Prisma } from '@prisma/client';
@@ -123,7 +125,7 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     }
     const channel = await app.prisma.channel.findUnique({
       where: { externalId: channelId },
-      select: { logoData: true, logoContentType: true },
+      select: { logoData: true, logoContentType: true, name: true },
     });
     if (!channel) {
       return reply.code(404).send({ error: 'Logo not found' });
@@ -165,6 +167,23 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
         .header('Cache-Control', 'public, max-age=86400')
         .type(fetched.contentType)
         .send(fetched.body);
+    }
+    const staticDir = join(process.cwd(), 'static', 'logos', 'akpa');
+    const exts = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+    const baseNames = [channelId];
+    if (channel.name?.trim()) {
+      const nameSlug = channel.name.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_-]/g, '');
+      if (nameSlug) baseNames.push(nameSlug);
+    }
+    for (const base of baseNames) {
+      for (const ext of exts) {
+        const filePath = join(staticDir, `${base}${ext}`);
+        if (existsSync(filePath)) {
+          const body = readFileSync(filePath);
+          const ct = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : 'image/webp';
+          return reply.header('Cache-Control', 'public, max-age=86400').type(ct).send(body);
+        }
+      }
     }
     return reply.code(404).send({ error: 'Logo not found' });
   });

@@ -16,6 +16,9 @@ RUN npx prisma generate
 # Skopiuj kod źródłowy
 COPY src ./src
 
+# Logotypy z bazy (static/logos/akpa/) – po uruchomieniu logos:export-db-to-static i commicie
+COPY static ./static/
+
 # Zbuduj TypeScript
 RUN npm run build
 
