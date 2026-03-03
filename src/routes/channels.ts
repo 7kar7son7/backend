@@ -94,10 +94,7 @@ export default async function channelsRoutes(app: FastifyInstance) {
         imageUrl: program.imageUrl != null ? String(program.imageUrl) : (resolvedLogoUrl ?? null),
         tags: Array.isArray(program.tags) ? program.tags.map((t: unknown) => String(t)) : [],
       }));
-      // Gdy 0 programów – nie dodawaj klucza "programs", żeby format był jak GET bez includePrograms (działa w Ustawieniach).
-      if (programsList.length === 0) {
-        return base;
-      }
+      // Zawsze zwracaj "programs" gdy includePrograms=true (nawet []), żeby ekran katalogu/guide widział te same klucze i pokazywał kanały.
       return { ...base, programs: programsList };
     });
 
