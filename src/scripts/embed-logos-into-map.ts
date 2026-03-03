@@ -7,7 +7,9 @@ import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from 
 import { join } from 'node:path';
 
 const STATIC_DIR = join(process.cwd(), 'static', 'logos', 'akpa');
-const OUT_FILE = join(process.cwd(), 'src', 'data', 'embedded-akpa-logos.ts');
+const OUT_DIR = join(process.cwd(), 'src', 'data');
+const OUT_FILE_TS = join(OUT_DIR, 'embedded-akpa-logos.ts');
+const OUT_FILE_JSON = join(OUT_DIR, 'embedded-akpa-logos.json');
 const EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 
 function contentType(ext: string): string {
@@ -46,10 +48,12 @@ function main() {
     '',
     `export const EMBEDDED_AKPA_LOGOS_COUNT = ${entries.length};`,
   ];
-  const outDir = join(process.cwd(), 'src', 'data');
-  mkdirSync(outDir, { recursive: true });
-  writeFileSync(OUT_FILE, lines.join('\n'), 'utf8');
-  console.log(`Zapisano ${entries.length} logotypów do ${OUT_FILE}`);
+  mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(OUT_FILE_TS, lines.join('\n'), 'utf8');
+  const obj: Record<string, { contentType: string; base64: string }> = {};
+  for (const e of entries) obj[e.id] = { contentType: e.contentType, base64: e.base64 };
+  writeFileSync(OUT_FILE_JSON, JSON.stringify(obj), 'utf8');
+  console.log(`Zapisano ${entries.length} logotypów do ${OUT_FILE_TS} i ${OUT_FILE_JSON}`);
 }
 
 main();

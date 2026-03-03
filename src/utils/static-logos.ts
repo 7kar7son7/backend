@@ -4,19 +4,29 @@ import { join } from 'node:path';
 type EmbeddedEntry = { contentType: string; base64: string };
 let embeddedLogosCache: Record<string, EmbeddedEntry> | null = null;
 
-/** Lazy-load dużej mapy embedded (46MB), żeby nie ładować jej przy starcie serwera (OOM na Railway). */
+/** Lazy-load mapy embedded z JSON (readFileSync – działa zawsze), potem opcjonalnie z .ts. */
 function getEmbeddedLogos(): Record<string, EmbeddedEntry> {
   if (embeddedLogosCache !== null) return embeddedLogosCache;
   let map: Record<string, EmbeddedEntry> = {};
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = require('../data/embedded-akpa-logos');
-    map = (mod.EMBEDDED_AKPA_LOGOS ?? {}) as Record<string, EmbeddedEntry>;
-  } catch (e) {
-    console.warn('[logos] Failed to load embedded-akpa-logos (file missing or OOM):', e instanceof Error ? e.message : e);
-  }
-  if (Object.keys(map).length === 0) {
-    console.warn('[logos] Embedded logos map is empty – upewnij się, że src/data/embedded-akpa-logos.ts jest w repo i w buildzie (npm run logos:embed).');
+  const cwd = process.cwd();
+  const dir = typeof __dirname !== 'undefined' ? __dirname : join(cwd, 'src', 'utils');
+  const jsonCandidates = [
+    join(cwd, 'src', 'data', 'embedded-akpa-logos.json'),
+    join(cwd, 'data', 'embedded-akpa-logos.json'),
+    join(dir, '..', 'data', 'embedded-akpa-logos.json'),
+  ];
+  for (const p of jsonCandidates) {
+    if (!existsSync(p)) continue;
+    try {
+      const raw = readFileSync(p, 'utf8');
+      const parsed = JSON.parse(raw) as Record<string, EmbeddedEntry>;
+      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+        map = parsed;
+        break;
+      }
+    } catch {
+      // next path
+    }
   }
   embeddedLogosCache = map;
   return embeddedLogosCache;

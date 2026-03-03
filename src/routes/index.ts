@@ -22,7 +22,8 @@ export async function registerRoutes<T extends import('fastify').FastifyInstance
   await app.register(programsRoutes, { prefix: '/programs' });
   await app.register(epgRoutes, { prefix: '/epg' });
 
-  // Wszystkie /logos/* (debug + akpa) tylko w pluginie – zero duplikatów → brak 502
   await app.register(logosRoutes, { prefix: '/logos' });
+
+  app.get('/logos-ping', async (_req, reply) => reply.send({ ok: true, msg: 'main app' }));
 }
 

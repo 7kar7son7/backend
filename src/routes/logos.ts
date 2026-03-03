@@ -1,8 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { FastifyInstance } from 'fastify';
 import { getStaticLogosDir, readLogoFromStatic, getStaticLogosDebug } from '../utils/static-logos';
-import fp from 'fastify-plugin';
 import { Prisma } from '@prisma/client';
 
 import { env } from '../config/env';
@@ -19,6 +18,7 @@ function toBuffer(data: unknown): Buffer | null {
   if (data == null) return null;
   if (Buffer.isBuffer(data)) return data;
   if (data instanceof Uint8Array) return Buffer.from(data);
+  if (data instanceof ArrayBuffer) return Buffer.from(data);
   if (typeof data === 'string') {
     let hex = data;
     if (hex.startsWith('\\x')) hex = hex.slice(2);
@@ -46,7 +46,42 @@ function rowVal<T>(row: Record<string, unknown>, ...keys: string[]): T | undefin
   return undefined;
 }
 
-const logosRoutes = fp(async (app: FastifyInstance) => {
+/** Ścieżki do JSON z embedded logos – __dirname lub cwd. Ładujemy raz przy starcie. */
+const embeddedJsonCandidates = [
+  resolve(
+    typeof __dirname !== 'undefined' ? __dirname : join(process.cwd(), 'src', 'routes'),
+    '..',
+    'data',
+    'embedded-akpa-logos.json',
+  ),
+  join(process.cwd(), 'src', 'data', 'embedded-akpa-logos.json'),
+];
+let embeddedLogosMap: Record<string, { contentType: string; base64: string }> = {};
+for (const embeddedJsonPath of embeddedJsonCandidates) {
+  if (!existsSync(embeddedJsonPath)) continue;
+  try {
+    embeddedLogosMap = JSON.parse(readFileSync(embeddedJsonPath, 'utf8')) as Record<
+      string,
+      { contentType: string; base64: string }
+    >;
+    if (Object.keys(embeddedLogosMap).length > 0) {
+      console.log('[logos] załadowano embedded JSON:', Object.keys(embeddedLogosMap).length, 'logotypów');
+      break;
+    }
+  } catch (e) {
+    console.warn('[logos] błąd JSON:', e instanceof Error ? e.message : e);
+  }
+}
+
+async function logosRoutes(app: FastifyInstance) {
+  app.get('/ping', async (_request, reply) => {
+    return reply.send({
+      ok: true,
+      mapSize: Object.keys(embeddedLogosMap).length,
+      hasAkpa367: !!embeddedLogosMap['akpa_367'],
+    });
+  });
+
   /** Diagnostyka: GET /logos/debug/db → ile kanałów AKPA ma logoData w bazie (raw SQL). Na produkcji sprawdź czy backend widzi dane. */
   app.get('/debug/db', async (_request, reply) => {
     try {
@@ -151,17 +186,36 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     });
   });
 
-  /** GET /logos/akpa/:channelId – najpierw static (szybko), potem baza, na końcu fetch z AKPA. */
+  /** GET /logos/akpa/:channelId – najpierw embedded, potem static, baza, AKPA. */
   app.get('/akpa/:channelId', async (request, reply) => {
     const channelId = (request.params as { channelId: string }).channelId;
-    app.log.info({ channelId }, '[logo] GET /logos/akpa');
     if (!channelId || !safeChannelId(channelId)) {
-      app.log.info({ channelId }, '[logo] 400 invalid id');
       return reply.code(400).send({ error: 'Invalid channel id' });
+    }
+    const embeddedEntry = embeddedLogosMap[channelId];
+    if (embeddedEntry?.base64) {
+      return reply
+        .header('Cache-Control', 'public, max-age=86400')
+        .type(embeddedEntry.contentType || 'image/png')
+        .send(Buffer.from(embeddedEntry.base64, 'base64'));
+    }
+    const jsonPath = join(process.cwd(), 'src', 'data', 'embedded-akpa-logos.json');
+    if (existsSync(jsonPath)) {
+      try {
+        const parsed = JSON.parse(readFileSync(jsonPath, 'utf8')) as Record<string, { contentType?: string; base64?: string }>;
+        const entry = parsed[channelId];
+        if (entry?.base64) {
+          return reply
+            .header('Cache-Control', 'public, max-age=86400')
+            .type(entry.contentType || 'image/png')
+            .send(Buffer.from(entry.base64, 'base64'));
+        }
+      } catch {
+        // ignore
+      }
     }
     const fromStatic = readLogoFromStatic(channelId);
     if (fromStatic) {
-      app.log.info({ channelId }, '[logo] 200 from static/embedded');
       return reply
         .header('Cache-Control', 'public, max-age=86400')
         .type(fromStatic.contentType)
@@ -203,13 +257,10 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
       app.log.warn({ channelId }, '[logo] 404 channel not in DB and no AKPA fallback');
       return reply.code(404).send({ error: 'Logo not found' });
     }
-    let data: Buffer | Uint8Array | null = channel.logoData as Buffer | Uint8Array | null;
+    let data: Buffer | null = toBuffer(channel.logoData);
     let contentType = (channel.logoContentType?.trim() || '') !== '' ? channel.logoContentType!.trim() : 'image/png';
-    const hasData =
-      data != null &&
-      ((Buffer.isBuffer(data) && data.length > 0) || (data instanceof Uint8Array && data.length > 0));
 
-    if (!hasData) {
+    if (!data || data.length === 0) {
       app.log.info({ channelId }, '[logo] no logoData from Prisma, trying raw SQL');
       const raw = await app.prisma.$queryRaw<Array<Record<string, unknown>>>(
         Prisma.sql`SELECT "logoData", "logoContentType" FROM channels WHERE "externalId" = ${channelId} LIMIT 1`,
@@ -218,23 +269,20 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
       if (row) {
         const rawData = rowVal<unknown>(row, 'logoData', 'logodata');
         const rawCt = rowVal<string>(row, 'logoContentType', 'logocontenttype');
-        if (rawData != null && typeof (rawData as Buffer).length === 'number' && (rawData as Buffer).length > 0) {
-          data = Buffer.isBuffer(rawData) ? rawData : Buffer.from(rawData as ArrayBuffer);
+        const decoded = toBuffer(rawData);
+        if (decoded && decoded.length > 0) {
+          data = decoded;
           if (rawCt && String(rawCt).trim()) contentType = String(rawCt).trim();
         }
       }
     }
 
-    const hasDataNow =
-      data != null &&
-      ((Buffer.isBuffer(data) && data.length > 0) || (data instanceof Uint8Array && data.length > 0));
-    if (hasDataNow && data) {
+    if (data && data.length > 0) {
       app.log.info({ channelId }, '[logo] 200 from DB');
-      const body: Buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as Uint8Array);
       return reply
         .header('Cache-Control', 'public, max-age=86400')
         .type(contentType)
-        .send(body);
+        .send(data);
     }
     app.log.info({ channelId, channelName: channel.name }, '[logo] no DB logo, calling fetchAndSaveAkpaLogo');
     const fetched = await fetchAndSaveAkpaLogoForChannel(app.prisma, app.log, channelId);
@@ -245,9 +293,34 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
         .type(fetched.contentType)
         .send(fetched.body);
     }
+    app.log.info({ channelId }, '[logo] fetchAndSaveAkpaLogo null – trying direct AKPA from map');
+    const folderMap = loadAkpaLogoFolderMap();
+    const folder = folderMap[channelId];
+    const baseUrl = ((env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? AKPA_LOGOS_DEFAULTS.BASE_URL).trim() || AKPA_LOGOS_DEFAULTS.BASE_URL).replace(/\/+$/, '');
+    const user = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? AKPA_LOGOS_DEFAULTS.USER).trim() || AKPA_LOGOS_DEFAULTS.USER;
+    const password = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? AKPA_LOGOS_DEFAULTS.PASSWORD).trim() || AKPA_LOGOS_DEFAULTS.PASSWORD;
+    if (folder && baseUrl && user && password) {
+      const authHeader = 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64');
+      let directResult = await fetchLogoFromAkpaFolder(baseUrl, authHeader, folder, (msg, meta) =>
+        app.log.warn({ ...meta, channelId }, `[logo] direct akpa ${msg}`));
+      if (!directResult) {
+        const newBase = ((env.AKPA_LOGOS_NEW_BASE_URL ?? process.env.AKPA_LOGOS_NEW_BASE_URL ?? AKPA_LOGOS_DEFAULTS.NEW_BASE_URL).trim() || AKPA_LOGOS_DEFAULTS.NEW_BASE_URL).replace(/\/+$/, '');
+        const newUser = (env.AKPA_LOGOS_NEW_USER ?? process.env.AKPA_LOGOS_NEW_USER ?? AKPA_LOGOS_DEFAULTS.NEW_USER).trim() || AKPA_LOGOS_DEFAULTS.NEW_USER;
+        const newPassword = (env.AKPA_LOGOS_NEW_PASSWORD ?? process.env.AKPA_LOGOS_NEW_PASSWORD ?? AKPA_LOGOS_DEFAULTS.NEW_PASSWORD).trim() || AKPA_LOGOS_DEFAULTS.NEW_PASSWORD;
+        if (newBase && newUser && newPassword) {
+          const newAuth = 'Basic ' + Buffer.from(`${newUser}:${newPassword}`).toString('base64');
+          directResult = await fetchLogoFromAkpaFolder(newBase, newAuth, folder, (msg, meta) =>
+            app.log.warn({ ...meta, channelId }, `[logo] direct akpa new ${msg}`));
+        }
+      }
+      if (directResult) {
+        app.log.info({ channelId, folder }, '[logo] 200 from direct AKPA (after fetchAndSave null)');
+        return reply.header('Cache-Control', 'public, max-age=86400').type(directResult.contentType).send(directResult.body);
+      }
+    }
     app.log.warn(
       { channelId },
-      '[logo] fetchAndSaveAkpaLogo returned null – sprawdź logi fetchAndSaveAkpaLogo (credentials, folder, HTTP status)',
+      '[logo] fetchAndSaveAkpaLogo returned null – sprawdź logi (credentials, folder, HTTP status)',
     );
     const staticDir = getStaticLogosDir();
     const exts = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
@@ -270,6 +343,6 @@ const logosRoutes = fp(async (app: FastifyInstance) => {
     app.log.warn({ channelId, staticDir, baseNames }, '[logo] 404 final – brak wszędzie');
     return reply.code(404).send({ error: 'Logo not found' });
   });
-});
+}
 
 export default logosRoutes;
