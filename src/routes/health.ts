@@ -1,7 +1,28 @@
 import fp from 'fastify-plugin';
+import os from 'node:os';
 import { Prisma } from '@prisma/client';
 
 const healthRoutes = fp(async (app) => {
+  /** Monitoring: CPU (load average) i RAM – do alertów i wykresów. */
+  app.get('/metrics', async () => {
+    const mem = process.memoryUsage();
+    const load = os.loadavg();
+    return {
+      timestamp: new Date().toISOString(),
+      memory: {
+        heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+        heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
+        rssMb: Math.round(mem.rss / 1024 / 1024),
+        externalMb: Math.round((mem.external ?? 0) / 1024 / 1024),
+      },
+      cpu: {
+        loadAvg1m: Math.round(load[0] * 100) / 100,
+        loadAvg5m: Math.round(load[1] * 100) / 100,
+        loadAvg15m: Math.round(load[2] * 100) / 100,
+      },
+    };
+  });
+
   app.get('/', async () => {
     let database: 'ok' | 'error' = 'ok';
 

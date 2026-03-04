@@ -47,6 +47,44 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(fastifySensible);
   await app.register(prismaPlugin);
 
+  // Monitoring: czas obsługi żądania (request time) – logowany przy każdej odpowiedzi
+  app.addHook('onRequest', (request, _reply, done) => {
+    (request as unknown as { _startTime?: number })._startTime = Date.now();
+    done();
+  });
+  app.addHook('onResponse', (request, reply, _payload, done) => {
+    const start = (request as unknown as { _startTime?: number })._startTime;
+    const ms = start != null ? Date.now() - start : 0;
+    request.log.info(
+      {
+        reqId: request.id,
+        method: request.method,
+        url: request.url,
+        statusCode: reply.statusCode,
+        responseTimeMs: ms,
+      },
+      'request completed',
+    );
+    done();
+  });
+
+  // Logowanie wszystkich błędów backendu (handlery route + błędy Fastify)
+  app.setErrorHandler((error, request, reply) => {
+    request.log.error(
+      {
+        err: error,
+        reqId: request.id,
+        method: request.method,
+        url: request.url,
+        statusCode: error.statusCode ?? 500,
+      },
+      error.message ?? 'Request error',
+    );
+    reply.status(error.statusCode ?? 500).send(
+      { error: error.message || 'Internal Server Error' },
+    );
+  });
+
   let reminderTask: ScheduledTask | null = null;
   let epgImportTask: ScheduledTask | null = null;
   let dailyReminderTask: { stop: () => void } | null = null;
