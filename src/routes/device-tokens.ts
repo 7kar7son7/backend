@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { NotificationSensitivity } from '@prisma/client';
 
 import { DeviceTokenService } from '../services/device-token.service';
+import { AbuseService } from '../services/abuse.service';
 import { getDeviceId } from '../utils/device';
 
 const registerSchema = z.object({
@@ -56,6 +57,9 @@ export default async function deviceTokensRoutes(app: FastifyInstance) {
     } catch (error) {
       request.log.warn(error);
       return reply.badRequest('Missing X-Device-Id header');
+    }
+    if (await abuseService.isDeviceBlocked(deviceId)) {
+      return reply.code(403).send({ error: 'Account is blocked' });
     }
 
     const body = updateSettingsSchema.parse(request.body);

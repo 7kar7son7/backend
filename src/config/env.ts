@@ -59,6 +59,8 @@ const envSchema = z.object({
   EVENT_EXPIRY_MINUTES: z.coerce.number().min(1).max(60).optional(),
   /** Max zgłoszeń (POST /events) na device na minutę (ochrona przed spamem). */
   EVENT_RATE_LIMIT_CREATE_PER_MIN: z.coerce.number().min(1).max(60).optional(),
+  /** Max zgłoszeń (POST /events) na device na godzinę – zabezpieczenie przed nadużyciami. */
+  EVENT_RATE_LIMIT_CREATE_PER_HOUR: z.coerce.number().min(5).max(500).optional(),
   /** Max potwierdzeń (POST /events/:id/confirm) na device na minutę. */
   EVENT_RATE_LIMIT_CONFIRM_PER_MIN: z.coerce.number().min(5).max(120).optional(),
   APP_VERSION: z.string().optional(),

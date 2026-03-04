@@ -7,10 +7,12 @@ import { NotificationService } from '../services/notification.service';
 import { PointsService } from '../services/points.service';
 import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
 import { getDeviceId } from '../utils/device';
-import { checkRateLimit } from '../utils/rate-limit';
+import { checkRateLimit, checkRateLimitHourly } from '../utils/rate-limit';
 import { env } from '../config/env';
+import { AbuseService } from '../services/abuse.service';
 
 const RATE_LIMIT_CREATE = env.EVENT_RATE_LIMIT_CREATE_PER_MIN ?? 10;
+const RATE_LIMIT_CREATE_PER_HOUR = env.EVENT_RATE_LIMIT_CREATE_PER_HOUR ?? 30;
 const RATE_LIMIT_CONFIRM = env.EVENT_RATE_LIMIT_CONFIRM_PER_MIN ?? 30;
 
 const createEventSchema = z.object({
@@ -30,6 +32,7 @@ export default async function eventsRoutes(app: FastifyInstance) {
   const eventService = new EventService(app.prisma);
   const notificationService = new NotificationService(app.prisma, app.log);
   const pointsService = new PointsService(app.prisma);
+  const abuseService = new AbuseService(app.prisma);
 
   type EventWithProgramAndChannel = Prisma.EventGetPayload<{
     include: {
@@ -86,9 +89,20 @@ export default async function eventsRoutes(app: FastifyInstance) {
       try {
         deviceId = getDeviceId(request);
       } catch {
-        return; // route will return 400
+        return;
+      }
+      if (await abuseService.isDeviceBlocked(deviceId)) {
+        return reply.code(403).send({ error: 'Account is blocked' });
       }
       const key = `event:create:${deviceId}`;
+      if (!checkRateLimitHourly(key, RATE_LIMIT_CREATE_PER_HOUR)) {
+        await abuseService.flagOrBlockDevice(deviceId, 'hourly_limit_exceeded', 'FLAGGED');
+        await abuseService.decreaseReputation(deviceId);
+        request.log.warn({ deviceId }, 'Event create: hourly limit exceeded, device flagged');
+        return reply.code(429).send({
+          error: 'Too many event reports this hour; try again later',
+        });
+      }
       if (!checkRateLimit(key, RATE_LIMIT_CREATE)) {
         return reply.code(429).send({
           error: 'Too many event reports; try again in a minute',
@@ -177,6 +191,9 @@ export default async function eventsRoutes(app: FastifyInstance) {
         deviceId = getDeviceId(request);
       } catch {
         return;
+      }
+      if (await abuseService.isDeviceBlocked(deviceId)) {
+        return reply.code(403).send({ error: 'Account is blocked' });
       }
       const key = `event:confirm:${deviceId}`;
       if (!checkRateLimit(key, RATE_LIMIT_CONFIRM)) {

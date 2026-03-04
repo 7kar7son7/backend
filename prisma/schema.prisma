@@ -172,6 +172,28 @@ model ProgramNotificationLog {
   @@map("program_notification_log")
 }
 
+/// Blokada lub oznaczanie nadużywających (per device). BLOCKED = odrzucamy żądania; FLAGGED = oznaczony do przeglądu.
+model BlockedDevice {
+  id        String              @id @default(uuid()) @db.Uuid
+  deviceId  String              @unique
+  status    BlockedDeviceStatus @default(FLAGGED)
+  reason    String?
+  createdAt DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime            @updatedAt @db.Timestamptz(6)
+
+  @@index([deviceId, status])
+  @@map("blocked_devices")
+}
+
+/// Opcjonalny system reputacji – niska wartość może skutkować ograniczeniami lub blokadą.
+model DeviceReputation {
+  deviceId   String   @id
+  score      Int      @default(100)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("device_reputation")
+}
+
 enum FollowType {
   CHANNEL
   PROGRAM
@@ -215,4 +237,9 @@ enum NotificationSensitivity {
   LOW
   MEDIUM
   HIGH
+}
+
+enum BlockedDeviceStatus {
+  FLAGGED
+  BLOCKED
 }
