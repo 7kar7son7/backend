@@ -11,6 +11,11 @@ const listQuerySchema = z.object({
     .union([z.literal('true'), z.literal('false')])
     .optional()
     .transform((value) => (value ? value === 'true' : undefined)),
+  /** Comma-separated channel UUIDs – zwróć tylko te kanały (np. ulubione). Optymalizacja: jeden request zamiast ładowania wszystkich. */
+  channelIds: z
+    .string()
+    .optional()
+    .transform((s) => (s ? s.split(',').map((id) => id.trim()).filter(Boolean) : undefined)),
   limit: z
     .string()
     .optional()
@@ -41,23 +46,22 @@ export default async function channelsRoutes(app: FastifyInstance) {
   app.get('/', async (request, reply) => {
     const query = listQuerySchema.parse(request.query);
     const includePrograms = query.includePrograms === true ? true : undefined;
-    const filters: { search?: string; includePrograms?: boolean; limit?: number; offset?: number } = {};
-    if (query.search) {
-      filters.search = query.search;
-    }
-    if (includePrograms) {
-      filters.includePrograms = true;
-    }
-    if (query.limit !== undefined) {
-      filters.limit = query.limit;
-    }
-    if (query.offset !== undefined) {
-      filters.offset = query.offset;
-    }
+    const filters: {
+      search?: string;
+      includePrograms?: boolean;
+      limit?: number;
+      offset?: number;
+      channelIds?: string[];
+    } = {};
+    if (query.search) filters.search = query.search;
+    if (includePrograms) filters.includePrograms = true;
+    if (query.channelIds?.length) filters.channelIds = query.channelIds;
+    if (query.limit !== undefined) filters.limit = query.limit;
+    if (query.offset !== undefined) filters.offset = query.offset;
 
     const channels = await channelService.listChannels(filters);
     request.log.info(
-      { count: channels.length, limit: filters.limit, offset: filters.offset },
+      { count: channels.length, limit: filters.limit, offset: filters.offset, byIds: !!filters.channelIds?.length },
       'GET /channels – lista kanałów',
     );
 

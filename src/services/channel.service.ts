@@ -3,8 +3,15 @@ import { Prisma, PrismaClient } from '@prisma/client';
 export class ChannelService {
   constructor(private readonly prisma: PrismaClient) {}
 
-  listChannels(params: { search?: string; includePrograms?: boolean; limit?: number; offset?: number }) {
-    const { search, includePrograms, limit, offset } = params;
+  listChannels(params: {
+    search?: string;
+    includePrograms?: boolean;
+    limit?: number;
+    offset?: number;
+    /** Zwróć tylko kanały o podanych ID (np. ulubione) – jeden request zamiast N. */
+    channelIds?: string[];
+  }) {
+    const { search, includePrograms, limit, offset, channelIds } = params;
 
     const include: Prisma.ChannelInclude | undefined =
       includePrograms === true
@@ -17,24 +24,26 @@ export class ChannelService {
                 },
               },
               orderBy: { startsAt: Prisma.SortOrder.asc },
-              // Pokazujemy wszystkie programy na najbliższe 7 dni
             },
           }
         : undefined;
 
-    const where: Prisma.ChannelWhereInput | undefined =
-      search !== undefined
-        ? {
-            OR: [
-              { name: { contains: search, mode: 'insensitive' } },
-              { category: { contains: search, mode: 'insensitive' } },
-            ],
-          }
-        : undefined;
+    const where: Prisma.ChannelWhereInput = {};
 
+    if (search !== undefined) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { category: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+    if (channelIds !== undefined && channelIds.length > 0) {
+      where.id = { in: channelIds };
+    }
+
+    const hasWhere = Object.keys(where).length > 0;
     return this.prisma.channel.findMany({
+      ...(hasWhere ? { where } : {}),
       orderBy: { name: Prisma.SortOrder.asc },
-      ...(where ? { where } : {}),
       ...(include ? { include } : {}),
       ...(limit !== undefined ? { take: limit } : {}),
       ...(offset !== undefined ? { skip: offset } : {}),
