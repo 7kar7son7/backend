@@ -9,6 +9,7 @@ import { env } from './config/env';
 import { registerRoutes } from './routes';
 import { startReminderJob } from './jobs/reminder.job';
 import { startEpgImportJob } from './jobs/epg-import.job';
+import { startEpgPruneJob } from './jobs/epg-prune.job';
 import { startDailyReminderJob } from './jobs/daily-reminder.job';
 import { startProgramStartReminderJob } from './jobs/event-notification.job';
 
@@ -87,6 +88,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   let reminderTask: ScheduledTask | null = null;
   let epgImportTask: ScheduledTask | null = null;
+  let epgPruneTask: ScheduledTask | null = null;
   let dailyReminderTask: { stop: () => void } | null = null;
   let startSoonTask: ScheduledTask | null = null;
 
@@ -99,6 +101,11 @@ export async function buildApp(): Promise<FastifyInstance> {
     epgImportTask = startEpgImportJob(app);
     if (epgImportTask) {
       app.log.info('EPG auto-import job scheduled');
+    }
+
+    epgPruneTask = startEpgPruneJob(app);
+    if (epgPruneTask) {
+      app.log.info('EPG daily prune job scheduled');
     }
 
     dailyReminderTask = startDailyReminderJob(app);
@@ -118,6 +125,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     if (epgImportTask) {
       epgImportTask.stop();
       app.log.info('EPG auto-import job stopped');
+    }
+    if (epgPruneTask) {
+      epgPruneTask.stop();
+      app.log.info('EPG prune job stopped');
     }
     if (dailyReminderTask) {
       dailyReminderTask.stop();
