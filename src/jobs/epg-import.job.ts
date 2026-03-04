@@ -9,6 +9,7 @@ import {
   pruneDisallowedChannels,
 } from '../services/iptv-org-importer';
 import { importAkpaEpg } from '../services/akpa-importer';
+import { EpgImportService } from '../services/epg-import.service';
 import { syncAkpaLogosToDb } from '../services/sync-akpa-logos-to-db.service';
 
 export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
@@ -22,7 +23,7 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
     return null;
   }
 
-  const schedule = env.EPG_AUTO_IMPORT_SCHEDULE ?? '0 3 * * *';
+  const schedule = env.EPG_AUTO_IMPORT_SCHEDULE ?? (useAkpa ? '0 */6 * * *' : '0 3 * * *');
   const timezone = env.EPG_AUTO_IMPORT_TIMEZONE ?? 'Europe/Warsaw';
   const runOnStart = env.EPG_AUTO_IMPORT_RUN_ON_START ?? (useAkpa ? true : false);
 
@@ -52,6 +53,11 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
           await pruneDisallowedChannels(app.prisma, app.log);
         }
         await runSelectedImport(app);
+        if (useAkpa) {
+          const maxAgeDays = Math.max(1, Number.parseInt(env.EPG_PRUNE_MAX_AGE_DAYS ?? process.env.EPG_PRUNE_MAX_AGE_DAYS ?? '14', 10) || 14);
+          const epgService = new EpgImportService(app.prisma, app.log);
+          await epgService.pruneOldPrograms(maxAgeDays);
+        }
         app.log.info('EPG auto-import finished successfully.');
       } catch (error) {
         app.log.error(error, 'EPG auto-import failed');
@@ -77,6 +83,11 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
           await pruneDisallowedChannels(app.prisma, app.log);
         }
         await runSelectedImport(app);
+        if (useAkpa) {
+          const maxAgeDays = Math.max(1, Number.parseInt(env.EPG_PRUNE_MAX_AGE_DAYS ?? process.env.EPG_PRUNE_MAX_AGE_DAYS ?? '14', 10) || 14);
+          const epgService = new EpgImportService(app.prisma, app.log);
+          await epgService.pruneOldPrograms(maxAgeDays);
+        }
         app.log.info('Initial EPG import finished successfully.');
         // Po imporcie AKPA: uzupełnij logoData w bazie (w tle), żeby GET /logos/akpa zwracał z bazy
         if (useAkpa) {

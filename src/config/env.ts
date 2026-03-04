@@ -29,6 +29,8 @@ const envSchema = z.object({
   IPTV_ORG_ALLOWED_PREFIXES: z.string().optional(),
   IPTV_ORG_SELECTED_IDS: z.string().optional(),
   EPG_IMPORT_CHUNK_SIZE: z.string().optional(),
+  /** Usuwanie programów zakończonych starszych niż N dni (np. 14 zgodnie z licencją AKPA). Dla AKPA domyślnie 14, dla IPTV w importerze używane 1. */
+  EPG_PRUNE_MAX_AGE_DAYS: z.string().optional(),
   // AKPA (api-epg.akpa.pl) – gdy AKPA_API_TOKEN ustawiony, import może iść z AKPA
   AKPA_API_URL: z.string().optional().transform((s) => s?.trim()),
   AKPA_API_TOKEN: z.string().optional().transform((s) => s?.trim()),
