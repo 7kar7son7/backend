@@ -1,4 +1,9 @@
-import Fastify, { FastifyInstance, FastifyServerOptions } from 'fastify';
+import Fastify, {
+  FastifyInstance,
+  FastifyReply,
+  FastifyRequest,
+  FastifyServerOptions,
+} from 'fastify';
 import fastifyCors from '@fastify/cors';
 import fastifyHelmet from '@fastify/helmet';
 import fastifySensible from '@fastify/sensible';
@@ -53,7 +58,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     (request as unknown as { _startTime?: number })._startTime = Date.now();
     done();
   });
-  app.addHook('onResponse', (request, reply, _payload, done) => {
+  app.addHook('onResponse', (request: FastifyRequest, reply: FastifyReply, done: (err?: Error) => void) => {
     const start = (request as unknown as { _startTime?: number })._startTime;
     const ms = start != null ? Date.now() - start : 0;
     request.log.info(
@@ -70,20 +75,23 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   // Logowanie wszystkich błędów backendu (handlery route + błędy Fastify)
-  app.setErrorHandler((error, request, reply) => {
+  app.setErrorHandler((error: unknown, request: FastifyRequest, reply: FastifyReply) => {
+    const err = error as Error & { statusCode?: number };
+    const statusCode = err.statusCode ?? 500;
+    const message = err.message ?? 'Request error';
     request.log.error(
       {
         err: error,
         reqId: request.id,
         method: request.method,
         url: request.url,
-        statusCode: error.statusCode ?? 500,
+        statusCode,
       },
-      error.message ?? 'Request error',
+      message,
     );
-    reply.status(error.statusCode ?? 500).send(
-      { error: error.message || 'Internal Server Error' },
-    );
+    reply.status(statusCode).send({
+      error: err.message || 'Internal Server Error',
+    });
   });
 
   let reminderTask: ScheduledTask | null = null;

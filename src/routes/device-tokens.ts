@@ -22,6 +22,7 @@ const updateSettingsSchema = z.object({
 
 export default async function deviceTokensRoutes(app: FastifyInstance) {
   const deviceTokenService = new DeviceTokenService(app.prisma);
+  const abuseService = new AbuseService(app.prisma);
 
   app.post('/', async (request, reply) => {
     let deviceId: string;

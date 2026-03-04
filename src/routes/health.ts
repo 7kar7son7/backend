@@ -16,9 +16,9 @@ const healthRoutes = fp(async (app) => {
         externalMb: Math.round((mem.external ?? 0) / 1024 / 1024),
       },
       cpu: {
-        loadAvg1m: Math.round(load[0] * 100) / 100,
-        loadAvg5m: Math.round(load[1] * 100) / 100,
-        loadAvg15m: Math.round(load[2] * 100) / 100,
+        loadAvg1m: Math.round((load[0] ?? 0) * 100) / 100,
+        loadAvg5m: Math.round((load[1] ?? 0) * 100) / 100,
+        loadAvg15m: Math.round((load[2] ?? 0) * 100) / 100,
       },
     };
   });
