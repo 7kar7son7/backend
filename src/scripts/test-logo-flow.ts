@@ -22,6 +22,7 @@ function createFileLogger(): FastifyBaseLogger {
     console.log(line.trim());
   };
   return {
+    level: 'info',
     child: () => createFileLogger(),
     trace: (o: object, msg: string) => log('trace', msg, o),
     debug: (o: object, msg: string) => log('debug', msg, o),
@@ -30,7 +31,7 @@ function createFileLogger(): FastifyBaseLogger {
     error: (o: object, msg: string) => log('error', msg, o),
     fatal: (o: object, msg: string) => log('fatal', msg, o),
     silent: () => {},
-  } as FastifyBaseLogger;
+  } as unknown as FastifyBaseLogger;
 }
 
 async function main() {
