@@ -7,6 +7,11 @@ import {
   ReminderKind,
 } from '@prisma/client';
 
+import { env } from '../config/env';
+
+const EVENT_EXPIRY_MINUTES = env.EVENT_EXPIRY_MINUTES ?? 5;
+const EVENT_CONFIRMATION_THRESHOLD = env.EVENT_CONFIRMATION_THRESHOLD ?? 2;
+
 export class EventService {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -25,12 +30,24 @@ export class EventService {
       throw new Error('Program not found');
     }
 
-    // Czas blokady kolejnego zgłoszenia zależy od długości programu:
-    // seriale ~30 min → 10 min, dłuższe filmy → 20 min (reklamy mogą wracać w trakcie)
-    const programDurationMinutes =
-      (program.endsAt.getTime() - program.startsAt.getTime()) / (60 * 1000);
-    const eventExpiryMinutes = programDurationMinutes <= 35 ? 10 : 20;
-    const expiresAt = new Date(Date.now() + eventExpiryMinutes * 60 * 1000);
+    // Ograniczenie: 1 zgłoszenie na blok reklamowy (ten sam device + program w oknie ważności)
+    const cooldownSince = new Date(Date.now() - EVENT_EXPIRY_MINUTES * 60 * 1000);
+    const existing = await this.prisma.event.findFirst({
+      where: {
+        programId,
+        initiatorDeviceId: deviceId,
+        OR: [
+          { status: { in: [EventStatus.PENDING, EventStatus.VALIDATED] } },
+          { initiatedAt: { gte: cooldownSince } },
+        ],
+      },
+      orderBy: { initiatedAt: 'desc' },
+    });
+    if (existing) {
+      throw new Error('Already reported for this program (one report per ad block)');
+    }
+
+    const expiresAt = new Date(Date.now() + EVENT_EXPIRY_MINUTES * 60 * 1000);
 
     const event = await this.prisma.event.create({
       data: {
@@ -38,6 +55,7 @@ export class EventService {
         initiatorDeviceId: deviceId,
         status: EventStatus.PENDING,
         expiresAt,
+        followerCountLimit: EVENT_CONFIRMATION_THRESHOLD,
       },
       include: {
         program: {

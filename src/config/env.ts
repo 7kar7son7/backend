@@ -53,6 +53,14 @@ const envSchema = z.object({
   DAILY_REMINDER_SCHEDULE: z.string().optional(),
   DAILY_REMINDER_ENABLED: z.coerce.boolean().optional(),
   ADMIN_EVENT_SECRET: z.string().optional(),
+  /** Min. potwierdzeń zanim wyślemy push „Koniec reklam” do innych (domyślnie 2). */
+  EVENT_CONFIRMATION_THRESHOLD: z.coerce.number().min(1).max(20).optional(),
+  /** Ważność zgłoszenia w minutach (3–5 zgodnie z wymaganiami, domyślnie 5). */
+  EVENT_EXPIRY_MINUTES: z.coerce.number().min(1).max(60).optional(),
+  /** Max zgłoszeń (POST /events) na device na minutę (ochrona przed spamem). */
+  EVENT_RATE_LIMIT_CREATE_PER_MIN: z.coerce.number().min(1).max(60).optional(),
+  /** Max potwierdzeń (POST /events/:id/confirm) na device na minutę. */
+  EVENT_RATE_LIMIT_CONFIRM_PER_MIN: z.coerce.number().min(5).max(120).optional(),
   APP_VERSION: z.string().optional(),
   APP_BUILD_NUMBER: z.coerce.number().optional(),
   APP_MIN_REQUIRED_VERSION: z.string().optional(),

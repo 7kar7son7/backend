@@ -7,7 +7,11 @@ import { NotificationService } from '../services/notification.service';
 import { PointsService } from '../services/points.service';
 import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
 import { getDeviceId } from '../utils/device';
+import { checkRateLimit } from '../utils/rate-limit';
 import { env } from '../config/env';
+
+const RATE_LIMIT_CREATE = env.EVENT_RATE_LIMIT_CREATE_PER_MIN ?? 10;
+const RATE_LIMIT_CONFIRM = env.EVENT_RATE_LIMIT_CONFIRM_PER_MIN ?? 30;
 
 const createEventSchema = z.object({
   programId: z.string().uuid(),
@@ -76,7 +80,22 @@ export default async function eventsRoutes(app: FastifyInstance) {
     return { data: formattedEvents };
   });
 
-  app.post('/', async (request, reply) => {
+  app.post('/', {
+    preHandler: async (request, reply) => {
+      let deviceId: string;
+      try {
+        deviceId = getDeviceId(request);
+      } catch {
+        return; // route will return 400
+      }
+      const key = `event:create:${deviceId}`;
+      if (!checkRateLimit(key, RATE_LIMIT_CREATE)) {
+        return reply.code(429).send({
+          error: 'Too many event reports; try again in a minute',
+        });
+      }
+    },
+  }, async (request, reply) => {
     let deviceId: string;
     try {
       deviceId = getDeviceId(request);
@@ -93,66 +112,24 @@ export default async function eventsRoutes(app: FastifyInstance) {
         body.programId,
       );
 
-      // Pobierz tylko followers którzy mają tokeny push (oprócz initiatora)
-      // To zapewnia że push notifications będą wysyłane tylko do użytkowników z tokenami
-      const followersWithTokens = await eventService.getProgramFollowersWithTokens(body.programId);
-      const recipients = followersWithTokens.filter((id) => id !== deviceId);
-      
-      // Szczegółowe logowanie dla debugowania
+      // Push „Koniec reklam” wysyłany dopiero po osiągnięciu min. X potwierdzeń (w POST /:eventId/confirm)
       request.log.info(
-        {
-          eventId: event.id,
-          programId: body.programId,
-          initiatorDeviceId: deviceId,
-          totalFollowers: followerDeviceIds.length,
-          followersWithTokens: followersWithTokens.length,
-          recipientsCount: recipients.length,
-          allFollowers: followerDeviceIds,
-          followersWithTokensList: followersWithTokens,
-          recipientsList: recipients,
-        },
-        'Event creation - push notification recipients analysis',
+        { eventId: event.id, programId: body.programId, followerCountLimit: event.followerCountLimit },
+        'Event created; push will be sent when confirmation threshold is reached',
       );
-      
-      if (recipients.length > 0) {
-        const programTitle = event.program.title || 'Program';
-        const channelName = event.program.channel?.name || '';
-        
-        const payload = {
-          eventId: event.id,
-          programId: event.programId,
-          channelId: event.program.channelId,
-          programTitle: channelName ? `${channelName}: ${programTitle}` : programTitle,
-          startsAt: event.program.startsAt.toISOString(),
-          channelLogoUrl: event.program.channel ? resolveChannelLogoUrlForApi(event.program.channel) : null,
-        };
-
-        await notificationService.sendEventStartedNotification(recipients, payload);
-        request.log.info(
-          { eventId: event.id, recipientsCount: recipients.length, recipients: recipients },
-          'Sent event notifications immediately after event creation',
-        );
-      } else {
-        request.log.warn(
-          {
-            eventId: event.id,
-            totalFollowers: followerDeviceIds.length,
-            followersWithTokens: followersWithTokens.length,
-            initiatorDeviceId: deviceId,
-            allFollowers: followerDeviceIds,
-            followersWithTokensList: followersWithTokens,
-          },
-          'No recipients with push tokens found for event notification - push will NOT be sent',
-        );
-      }
 
       const formattedEvent = await finalizeEventResponse(event, followerDeviceIds, deviceId);
       return reply.code(201).send({
-        data: { ...formattedEvent, recipientsCount: recipients.length },
+        data: { ...formattedEvent, recipientsCount: 0 },
       });
     } catch (error) {
-      if (error instanceof Error && error.message === 'Program not found') {
-        return reply.notFound(error.message);
+      if (error instanceof Error) {
+        if (error.message === 'Program not found') {
+          return reply.notFound(error.message);
+        }
+        if (error.message === 'Already reported for this program (one report per ad block)') {
+          return reply.code(409).send({ error: error.message });
+        }
       }
       request.log.error(error, 'Failed to create event');
       return reply.internalServerError();
@@ -193,7 +170,22 @@ export default async function eventsRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post('/:eventId/confirm', async (request, reply) => {
+  app.post('/:eventId/confirm', {
+    preHandler: async (request, reply) => {
+      let deviceId: string;
+      try {
+        deviceId = getDeviceId(request);
+      } catch {
+        return;
+      }
+      const key = `event:confirm:${deviceId}`;
+      if (!checkRateLimit(key, RATE_LIMIT_CONFIRM)) {
+        return reply.code(429).send({
+          error: 'Too many confirmations; try again in a minute',
+        });
+      }
+    },
+  }, async (request, reply) => {
     let deviceId: string;
     try {
       deviceId = getDeviceId(request);
