@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Ścieżka dla własnych plików dźwiękowych powiadomień -->
-    <external-files-path name="notification_sounds" path="notification_sounds/" />
-    <files-path name="notification_sounds_internal" path="notification_sounds/" />
-</paths>
