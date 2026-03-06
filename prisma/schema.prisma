@@ -64,6 +64,7 @@ model FollowedItem {
 
   @@unique([deviceId, channelId], map: "follow_device_channel_unique")
   @@unique([deviceId, programId], map: "follow_device_program_unique")
+  @@index([deviceId])
   @@map("followed_items")
 }
 

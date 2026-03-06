@@ -4,6 +4,7 @@ import Fastify, {
   FastifyRequest,
   FastifyServerOptions,
 } from 'fastify';
+import fastifyCompress from '@fastify/compress';
 import fastifyCors from '@fastify/cors';
 import fastifyHelmet from '@fastify/helmet';
 import fastifySensible from '@fastify/sensible';
@@ -44,6 +45,8 @@ export async function buildApp(): Promise<FastifyInstance> {
     contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   });
+
+  await app.register(fastifyCompress, { global: true });
 
   await app.register(fastifyCors, {
     origin: true,
