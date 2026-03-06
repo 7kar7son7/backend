@@ -251,7 +251,17 @@ function toEpgProgram(raw: AkpaProgramRaw): EpgProgram | null {
   if (endDate != null) prog.end = endDate.toISOString();
   if (typeof raw.season === 'number') prog.season = raw.season;
   if (typeof raw.episode === 'number') prog.episode = raw.episode;
-  if (raw.image != null) prog.image = String(raw.image);
+  // Zdjęcie programu: AKPA zwraca photo[] z obiektami { url }, nie pole "image"
+  if (raw.image != null && String(raw.image).trim()) {
+    prog.image = String(raw.image).trim();
+  } else {
+    const photoArr = (raw as Record<string, unknown>).photo;
+    if (Array.isArray(photoArr) && photoArr.length > 0) {
+      const first = photoArr[0] as Record<string, unknown> | null;
+      const url = first?.url != null ? String(first.url).trim() : '';
+      if (url) prog.image = url;
+    }
+  }
   const tagList = Array.isArray(raw.tags) ? raw.tags.map((t) => String(t)) : [];
   const r = raw as Record<string, unknown>;
   if (r.genre != null && String(r.genre).trim()) tagList.push(String(r.genre).trim());
