@@ -56,7 +56,7 @@ export default async function programsRoutes(app: FastifyInstance) {
           episodeNumber: program.episodeNumber,
           startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
           endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-          imageUrl: program.imageUrl ?? (program.channel ? resolveChannelLogoUrlForApi(program.channel) : null) ?? null,
+          imageUrl: program.imageUrl ?? null,
           tags: program.tags ?? [],
         },
       };
@@ -180,7 +180,7 @@ export default async function programsRoutes(app: FastifyInstance) {
             episodeNumber: program.episodeNumber,
             startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
             endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-            imageUrl: program.imageUrl ?? (program.channel ? resolveChannelLogoUrlForApi(program.channel) : null) ?? null,
+            imageUrl: program.imageUrl ?? null,
             tags: program.tags ?? [],
           })),
       };
