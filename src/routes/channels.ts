@@ -95,7 +95,7 @@ export default async function channelsRoutes(app: FastifyInstance) {
         episodeNumber: program.episodeNumber ?? null,
         startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
         endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-        imageUrl: program.imageUrl != null ? String(program.imageUrl) : (resolvedLogoUrl ?? null),
+        imageUrl: program.imageUrl != null ? String(program.imageUrl) : null,
         tags: Array.isArray(program.tags) ? program.tags.map((t: unknown) => String(t)) : [],
       }));
       // Zawsze zwracaj "programs" gdy includePrograms=true (nawet []), żeby ekran katalogu/guide widział te same klucze i pokazywał kanały.
@@ -154,7 +154,7 @@ export default async function channelsRoutes(app: FastifyInstance) {
           episodeNumber: program.episodeNumber ?? null,
           startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
           endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-          imageUrl: program.imageUrl ?? logoUrl ?? null,
+          imageUrl: program.imageUrl ?? null,
           tags: program.tags ?? [],
         })),
       },
