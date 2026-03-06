@@ -10,6 +10,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "epg:import": "tsx src/scripts/import-epg.ts",
+    "epg:import:akpa": "tsx src/scripts/run-akpa-import.ts",
     "epg:import:iptv": "tsx src/scripts/import-epg-iptv-org.ts",
     "epg:prune": "tsx src/scripts/prune-non-pl-channels.ts",
     "db:seed:pl": "tsx src/scripts/seed-polish-channels.ts",
