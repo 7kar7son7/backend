@@ -29,6 +29,7 @@ export class ProgramService {
     return this.prisma.program.findMany({
       where,
       orderBy: { startsAt: Prisma.SortOrder.asc },
+      include: { channel: true },
     });
   }
 

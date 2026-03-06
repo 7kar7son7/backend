@@ -121,11 +121,6 @@ export default async function channelsRoutes(app: FastifyInstance) {
     const params = z.object({ channelId: z.string().uuid() }).parse(request.params);
     const query = programsQuerySchema.parse(request.query);
 
-    const channel = await channelService.getChannel(params.channelId);
-    if (!channel) {
-      return reply.notFound('Channel not found');
-    }
-
     const filter: { from?: Date; to?: Date } = {};
     if (query.from) {
       filter.from = query.from;
@@ -138,6 +133,11 @@ export default async function channelsRoutes(app: FastifyInstance) {
       params.channelId,
       filter,
     );
+
+    const channel = programs[0]?.channel ?? (await channelService.getChannel(params.channelId));
+    if (!channel) {
+      return reply.notFound('Channel not found');
+    }
 
     const logoUrl = channelLogoUrlForResponse(channel);
     return {
