@@ -13,8 +13,8 @@ export class ChannelService {
   }) {
     const { search, includePrograms, limit, offset, channelIds } = params;
 
-    // Ograniczenie: max 16 programów na kanał w liście – szybsze zapytanie i mniejszy JSON (szczegóły kanału ładują pełną listę osobno)
-    const PROGRAMS_PER_CHANNEL_LIMIT = 16;
+    // Ograniczenie: max 32 programy na kanał (ok. 1–2 dni) – szybsze zapytanie i mniejszy JSON
+    const PROGRAMS_PER_CHANNEL_LIMIT = 32;
     const include: Prisma.ChannelInclude | undefined =
       includePrograms === true
         ? {
