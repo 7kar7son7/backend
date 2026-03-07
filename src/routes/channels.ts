@@ -7,15 +7,15 @@ import { ProgramService } from '../services/program.service';
 
 const listQuerySchema = z.object({
   search: z.string().min(2).optional(),
-  includePrograms: z
-    .union([z.literal('true'), z.literal('false')])
-    .optional()
-    .transform((value) => (value ? value === 'true' : undefined)),
   /** Comma-separated channel UUIDs – zwróć tylko te kanały (np. ulubione). Optymalizacja: jeden request zamiast ładowania wszystkich. */
   channelIds: z
     .string()
     .optional()
     .transform((s) => (s ? s.split(',').map((id) => id.trim()).filter(Boolean) : undefined)),
+  includePrograms: z
+    .union([z.literal('true'), z.literal('false')])
+    .optional()
+    .transform((value) => (value ? value === 'true' : undefined)),
   limit: z
     .string()
     .optional()

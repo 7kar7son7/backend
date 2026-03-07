@@ -44,6 +44,7 @@ export class ChannelService {
     }
 
     const hasWhere = Object.keys(where).length > 0;
+
     return this.prisma.channel.findMany({
       ...(hasWhere ? { where } : {}),
       orderBy: { name: Prisma.SortOrder.asc },
@@ -59,4 +60,3 @@ export class ChannelService {
     });
   }
 }
-
