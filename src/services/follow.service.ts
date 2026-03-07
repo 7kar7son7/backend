@@ -1,5 +1,6 @@
 import { FollowType, PrismaClient } from '@prisma/client';
 
+import { env } from '../config/env';
 import { channelLogoUrlForResponse } from '../utils/channel-logo';
 import { programImageUrlForApi } from '../utils/program-photo-url';
 
@@ -69,7 +70,7 @@ export class FollowService {
             episodeNumber: item.program.episodeNumber,
             startsAt: item.program.startsAt instanceof Date ? item.program.startsAt.toISOString() : item.program.startsAt,
             endsAt: item.program.endsAt instanceof Date ? item.program.endsAt.toISOString() : item.program.endsAt,
-            imageUrl: programImageUrlForApi(item.program.imageUrl) ?? item.program.imageUrl ?? (item.program.channel ? channelLogoUrlForResponse(item.program.channel) : null),
+            imageUrl: programImageUrlForApi(item.program.imageUrl, env.PUBLIC_API_URL, { programId: item.program.id, hasImageData: item.program.imageHasData }) ?? item.program.imageUrl ?? (item.program.channel ? channelLogoUrlForResponse(item.program.channel) : null),
             tags: item.program.tags ?? [],
           },
         };

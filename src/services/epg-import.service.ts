@@ -2,6 +2,7 @@ import { FastifyBaseLogger } from 'fastify';
 import { Prisma, PrismaClient } from '@prisma/client';
 
 import { env } from '../config/env';
+import { fetchAkpaImage, isAkpaPhotoUrl } from '../utils/fetch-akpa-image';
 
 export type EpgProgram = {
   id: string;
@@ -195,6 +196,37 @@ export class EpgImportService {
           try {
             await this.prisma.$transaction(operations);
             programCount += validProgramsInChunk;
+
+            // Pobierz zdjęcia z AKPA i zapisz do bazy (imageData) – bez proxy przy odczycie
+            const withImage = programChunk.filter((p) => p.image && isAkpaPhotoUrl(p.image));
+            if (withImage.length > 0) {
+              const externalIds = withImage.map((p) => p.id);
+              const dbPrograms = await this.prisma.program.findMany({
+                where: { externalId: { in: externalIds }, channelId: channelRecord.id },
+                select: { id: true, externalId: true },
+              });
+              const byExternalId = new Map(dbPrograms.map((p) => [p.externalId, p.id]));
+              const IMAGE_CONCURRENCY = 3;
+              for (let i = 0; i < withImage.length; i += IMAGE_CONCURRENCY) {
+                const batch = withImage.slice(i, i + IMAGE_CONCURRENCY);
+                await Promise.all(
+                  batch.map(async (prog) => {
+                    const dbId = byExternalId.get(prog.id);
+                    if (!dbId || !prog.image) return;
+                    const result = await fetchAkpaImage(prog.image);
+                    if (!result) return;
+                    await this.prisma.program.update({
+                      where: { id: dbId },
+                      data: {
+                        imageData: result.buffer,
+                        imageContentType: result.contentType.slice(0, 64),
+                        imageHasData: true,
+                      },
+                    });
+                  }),
+                );
+              }
+            }
           } catch (error) {
             this.logger.error(
               { 

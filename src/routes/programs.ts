@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
 import { programImageUrlForApi } from '../utils/program-photo-url';
+import { env } from '../config/env';
 
 const dayQuerySchema = z.object({
   date: z
@@ -27,6 +28,30 @@ const dayQuerySchema = z.object({
 });
 
 export default async function programsRoutes(app: FastifyInstance) {
+  app.get('/photo/:programId', async (request, reply) => {
+    try {
+      const { programId } = request.params as { programId: string };
+      const program = await app.prisma.program.findUnique({
+        where: { id: programId },
+        select: { imageData: true, imageContentType: true },
+      });
+      if (!program?.imageData || !Buffer.isBuffer(program.imageData)) {
+        return reply.code(404).send({ error: 'Photo not found', message: 'Program has no photo in database' });
+      }
+      const contentType = program.imageContentType ?? 'image/jpeg';
+      return reply
+        .header('Content-Type', contentType)
+        .header('Cache-Control', 'public, max-age=86400')
+        .send(Buffer.from(program.imageData));
+    } catch (error) {
+      request.log.error(error, 'Failed to serve program photo');
+      return reply.code(500).send({
+        error: 'Failed to serve program photo',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
   app.get('/:programId', async (request, reply) => {
     try {
       const { programId } = request.params as { programId: string };
@@ -57,7 +82,7 @@ export default async function programsRoutes(app: FastifyInstance) {
           episodeNumber: program.episodeNumber,
           startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
           endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-          imageUrl: programImageUrlForApi(program.imageUrl) ?? (program.channel ? resolveChannelLogoUrlForApi(program.channel) : null) ?? null,
+          imageUrl: programImageUrlForApi(program.imageUrl, env.PUBLIC_API_URL, { programId: program.id, hasImageData: program.imageHasData }) ?? (program.channel ? resolveChannelLogoUrlForApi(program.channel) : null) ?? null,
           tags: program.tags ?? [],
         },
       };
@@ -181,7 +206,7 @@ export default async function programsRoutes(app: FastifyInstance) {
             episodeNumber: program.episodeNumber,
             startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
             endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-            imageUrl: programImageUrlForApi(program.imageUrl) ?? (program.channel ? resolveChannelLogoUrlForApi(program.channel) : null) ?? null,
+            imageUrl: programImageUrlForApi(program.imageUrl, env.PUBLIC_API_URL, { programId: program.id, hasImageData: program.imageHasData }) ?? (program.channel ? resolveChannelLogoUrlForApi(program.channel) : null) ?? null,
             tags: program.tags ?? [],
           })),
       };

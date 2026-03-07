@@ -25,7 +25,8 @@
     "logos:sync-one": "tsx src/scripts/sync-one-channel-logo.ts",
     "logos:export-db-to-static": "tsx src/scripts/export-logos-db-to-static.ts",
     "logos:check-mapping": "tsx src/scripts/check-logos-mapping.ts",
-    "logos:embed": "tsx src/scripts/embed-logos-into-map.ts"
+    "logos:embed": "tsx src/scripts/embed-logos-into-map.ts",
+    "scripts:backfill-program-photos": "tsx src/scripts/backfill-program-photos.ts"
   },
   "keywords": [],
   "author": "",

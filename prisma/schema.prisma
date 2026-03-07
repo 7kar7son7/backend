@@ -33,10 +33,13 @@ model Program {
   description    String?
   seasonNumber   Int?
   episodeNumber  Int?
-  startsAt       DateTime       @db.Timestamptz(6)
-  endsAt         DateTime       @db.Timestamptz(6)
-  imageUrl       String?
-  tags           String[]
+  startsAt         DateTime       @db.Timestamptz(6)
+  endsAt           DateTime       @db.Timestamptz(6)
+  imageUrl         String?
+  imageData        Bytes?
+  imageContentType String?        @db.VarChar(64)
+  imageHasData     Boolean        @default(false)
+  tags             String[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   eventWindows   Event[]
