@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { channelLogoUrlForResponse, resolveChannelLogoUrlForApi } from '../utils/channel-logo';
+import { programImageUrlForApi } from '../utils/program-photo-url';
 import { ChannelService } from '../services/channel.service';
 import { ProgramService } from '../services/program.service';
 
@@ -95,7 +96,7 @@ export default async function channelsRoutes(app: FastifyInstance) {
         episodeNumber: program.episodeNumber ?? null,
         startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
         endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-        imageUrl: program.imageUrl != null ? String(program.imageUrl) : null,
+        imageUrl: programImageUrlForApi(program.imageUrl) ?? (program.imageUrl != null ? String(program.imageUrl) : null) ?? (resolvedLogoUrl ?? null),
         tags: Array.isArray(program.tags) ? program.tags.map((t: unknown) => String(t)) : [],
       }));
       // Zawsze zwracaj "programs" gdy includePrograms=true (nawet []), żeby ekran katalogu/guide widział te same klucze i pokazywał kanały.
@@ -154,7 +155,7 @@ export default async function channelsRoutes(app: FastifyInstance) {
           episodeNumber: program.episodeNumber ?? null,
           startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
           endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-          imageUrl: program.imageUrl ?? null,
+          imageUrl: programImageUrlForApi(program.imageUrl) ?? program.imageUrl ?? logoUrl ?? null,
           tags: program.tags ?? [],
         })),
       },

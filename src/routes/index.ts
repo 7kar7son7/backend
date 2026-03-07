@@ -8,12 +8,14 @@ import pointsRoutes from './points';
 import programsRoutes from './programs';
 import epgRoutes from './epg';
 import logosRoutes from './logos';
+import photosRoutes from './photos';
 
 export async function registerRoutes<T extends import('fastify').FastifyInstance>(
   app: T,
 ) {
   await app.register(healthRoutes, { prefix: '/health' });
   await app.register(appRoutes, { prefix: '/app' });
+  await app.register(photosRoutes, { prefix: '/photos' });
   await app.register(channelsRoutes, { prefix: '/channels' });
   await app.register(followsRoutes, { prefix: '/follows' });
   await app.register(eventsRoutes, { prefix: '/events' });
