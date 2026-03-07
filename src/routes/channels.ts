@@ -104,7 +104,10 @@ export default async function channelsRoutes(app: FastifyInstance) {
       return { ...base, programs: programsList };
     });
 
-    return reply.type('application/json').send({ data: formattedChannels });
+    return reply
+      .header('Cache-Control', 'private, max-age=60')
+      .type('application/json')
+      .send({ data: formattedChannels });
   });
 
   app.get('/:channelId', async (request, reply) => {
@@ -116,7 +119,9 @@ export default async function channelsRoutes(app: FastifyInstance) {
     }
 
     const logoUrl = channelLogoUrlForResponse(channel);
-    return { data: { ...channel, logoUrl } };
+    return reply
+      .header('Cache-Control', 'private, max-age=60')
+      .send({ data: { ...channel, logoUrl } });
   });
 
   app.get('/:channelId/programs', async (request, reply) => {
@@ -142,25 +147,27 @@ export default async function channelsRoutes(app: FastifyInstance) {
     }
 
     const logoUrl = channelLogoUrlForResponse(channel);
-    return {
-      data: {
-        channel: { ...channel, logoUrl },
-        programs: programs.map((program) => ({
-          id: program.id,
-          title: program.title,
-          channelId: program.channelId,
-          channelName: channel.name,
-          channelLogoUrl: logoUrl,
-          description: program.description ?? null,
-          seasonNumber: program.seasonNumber ?? null,
-          episodeNumber: program.episodeNumber ?? null,
-          startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
-          endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-          imageUrl: programImageUrlForApi(program.imageUrl, env.PUBLIC_API_URL, { programId: program.id, hasImageData: program.imageHasData }) ?? program.imageUrl ?? logoUrl ?? null,
-          tags: program.tags ?? [],
-        })),
-      },
-    };
+    return reply
+      .header('Cache-Control', 'private, max-age=60')
+      .send({
+        data: {
+          channel: { ...channel, logoUrl },
+          programs: programs.map((program) => ({
+            id: program.id,
+            title: program.title,
+            channelId: program.channelId,
+            channelName: channel.name,
+            channelLogoUrl: logoUrl,
+            description: program.description ?? null,
+            seasonNumber: program.seasonNumber ?? null,
+            episodeNumber: program.episodeNumber ?? null,
+            startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
+            endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
+            imageUrl: programImageUrlForApi(program.imageUrl, env.PUBLIC_API_URL, { programId: program.id, hasImageData: program.imageHasData }) ?? program.imageUrl ?? logoUrl ?? null,
+            tags: program.tags ?? [],
+          })),
+        },
+      });
   });
 }
 

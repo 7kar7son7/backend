@@ -48,6 +48,7 @@ model Program {
   notificationLogs ProgramNotificationLog[]
 
   @@index([channelId, startsAt])
+  @@index([channelId, endsAt])
   @@index([endsAt])
   @@index([startsAt])
   @@map("programs")

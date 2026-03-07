@@ -70,22 +70,24 @@ export default async function programsRoutes(app: FastifyInstance) {
         });
       }
 
-      return {
-        data: {
-          id: program.id,
-          title: program.title,
-          channelId: program.channelId,
-          channelName: program.channel?.name ?? program.channelId ?? 'Nieznany kanał',
-          channelLogoUrl: program.channel ? resolveChannelLogoUrlForApi(program.channel) : null,
-          description: program.description,
-          seasonNumber: program.seasonNumber,
-          episodeNumber: program.episodeNumber,
-          startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
-          endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-          imageUrl: programImageUrlForApi(program.imageUrl, env.PUBLIC_API_URL, { programId: program.id, hasImageData: program.imageHasData }) ?? (program.channel ? resolveChannelLogoUrlForApi(program.channel) : null) ?? null,
-          tags: program.tags ?? [],
-        },
-      };
+      return reply
+        .header('Cache-Control', 'private, max-age=60')
+        .send({
+          data: {
+            id: program.id,
+            title: program.title,
+            channelId: program.channelId,
+            channelName: program.channel?.name ?? program.channelId ?? 'Nieznany kanał',
+            channelLogoUrl: program.channel ? resolveChannelLogoUrlForApi(program.channel) : null,
+            description: program.description,
+            seasonNumber: program.seasonNumber,
+            episodeNumber: program.episodeNumber,
+            startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
+            endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
+            imageUrl: programImageUrlForApi(program.imageUrl, env.PUBLIC_API_URL, { programId: program.id, hasImageData: program.imageHasData }) ?? (program.channel ? resolveChannelLogoUrlForApi(program.channel) : null) ?? null,
+            tags: program.tags ?? [],
+          },
+        });
     } catch (error) {
       request.log.error(error, 'Failed to fetch program');
       return reply.code(500).send({
