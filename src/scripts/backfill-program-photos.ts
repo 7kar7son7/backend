@@ -56,7 +56,7 @@ async function main() {
           await prisma.program.update({
             where: { id: prog.id },
             data: {
-              imageData: result.buffer,
+              imageData: new Uint8Array(result.buffer),
               imageContentType: result.contentType.slice(0, 64),
               imageHasData: true,
             },

@@ -218,7 +218,7 @@ export class EpgImportService {
                     await this.prisma.program.update({
                       where: { id: dbId },
                       data: {
-                        imageData: result.buffer,
+                        imageData: new Uint8Array(result.buffer),
                         imageContentType: result.contentType.slice(0, 64),
                         imageHasData: true,
                       },
