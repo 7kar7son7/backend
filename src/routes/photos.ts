@@ -20,6 +20,22 @@ function buildAkpaAuthHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }
 
+/** Gdy AKPA wymaga tokenu w URL (np. ?token=...) – jak w akpa-importer */
+function getAuthQueryParamName(): string | undefined {
+  const raw = env.AKPA_AUTH_QUERY_PARAM ?? process.env.AKPA_AUTH_QUERY_PARAM;
+  if (!raw || !String(raw).trim()) return undefined;
+  return String(raw).trim();
+}
+
+/** Dodaje token do URL zdjęcia AKPA, jeśli AKPA_AUTH_QUERY_PARAM jest ustawiony */
+function photoUrlWithQueryAuth(url: URL, token: string): string {
+  const paramName = getAuthQueryParamName();
+  if (!paramName || !token) return url.toString();
+  const u = new URL(url.toString());
+  u.searchParams.set(paramName, token);
+  return u.toString();
+}
+
 export default async function photosRoutes(app: FastifyInstance) {
   /**
    * GET /photos/proxy?url=<encoded_akpa_photo_url>
@@ -40,6 +56,7 @@ export default async function photosRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: 'Only AKPA photo URLs are allowed' });
     }
 
+    const token = (env.AKPA_API_TOKEN ?? process.env.AKPA_API_TOKEN ?? '').trim();
     const authHeaders = buildAkpaAuthHeaders();
     if (Object.keys(authHeaders).length === 0) {
       request.log.warn('Photos proxy: AKPA_API_TOKEN nie ustawiony – ustaw zmienną na serwerze (np. Railway/Docker env)');
@@ -49,8 +66,10 @@ export default async function photosRoutes(app: FastifyInstance) {
       });
     }
 
+    const fetchUrl = photoUrlWithQueryAuth(targetUrl, token);
     const headers: Record<string, string> = {
       Accept: 'image/*',
+      'User-Agent': 'BackOnTV/1.0 (backend proxy; +https://backend.devstudioit.app)',
       ...authHeaders,
     };
 
@@ -58,7 +77,7 @@ export default async function photosRoutes(app: FastifyInstance) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
       try {
-        const res = await fetch(targetUrl.toString(), {
+        const res = await fetch(fetchUrl, {
           method: 'GET',
           headers,
           signal: controller.signal,
