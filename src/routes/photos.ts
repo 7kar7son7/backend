@@ -1,9 +1,11 @@
+import * as https from 'node:https';
 import { FastifyInstance } from 'fastify';
 import { env } from '../config/env';
 
 const AKPA_PHOTO_HOST = 'api-epg.akpa.pl';
 const FETCH_TIMEOUT_MS = 15000;
-const MAX_RETRIES = 2; // przy "other side closed" / terminated – AKPA czasem zamyka połączenie
+const MAX_RETRIES = 5; // przy "other side closed" – więcej prób, dłuższe odstępy
+const RETRY_DELAY_MS = 800; // opóźnienie między próbami (800, 1600, 2400...)
 
 function isRetryableConnectionError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -34,6 +36,42 @@ function photoUrlWithQueryAuth(url: URL, token: string): string {
   const u = new URL(url.toString());
   u.searchParams.set(paramName, token);
   return u.toString();
+}
+
+/** Ostatnia deska: pobierz przez node:https (czasem działa gdy fetch dostaje "other side closed"). */
+function fetchWithNodeHttps(
+  url: URL,
+  headers: Record<string, string>,
+  timeoutMs: number,
+): Promise<{ buffer: Buffer; contentType: string }> {
+  return new Promise((resolve, reject) => {
+    const opts: https.RequestOptions = {
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+      method: 'GET',
+      headers,
+      timeout: timeoutMs,
+    };
+    const req = https.request(opts, (res) => {
+      if (res.statusCode && res.statusCode >= 400) {
+        reject(new Error(`HTTP ${res.statusCode}`));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.on('end', () => resolve({
+        buffer: Buffer.concat(chunks),
+        contentType: res.headers['content-type'] || 'image/jpeg',
+      }));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Timeout'));
+    });
+    req.end();
+  });
 }
 
 export default async function photosRoutes(app: FastifyInstance) {
@@ -110,17 +148,37 @@ export default async function photosRoutes(app: FastifyInstance) {
             { attempt: attempt + 1, maxRetries: MAX_RETRIES, url: targetUrl.toString() },
             'Photos proxy: połączenie zamknięte przez AKPA, ponawiam',
           );
-          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
           continue;
         }
+        // Ostatnia deska: jeden raz przez node:https (inny stos TCP/SSL niż fetch)
+        if (retryable && targetUrl.protocol === 'https:') {
+          try {
+            const parsed = new URL(fetchUrl);
+            const { buffer, contentType } = await fetchWithNodeHttps(parsed, headers, FETCH_TIMEOUT_MS);
+            request.log.info({ url: targetUrl.toString() }, 'Photos proxy: fallback node:https OK');
+            return reply
+              .header('Cache-Control', 'public, max-age=3600')
+              .type(contentType)
+              .send(buffer);
+          } catch (fallbackErr) {
+            request.log.warn({ err: fallbackErr, url: targetUrl.toString() }, 'Photos proxy: fallback node:https też nie zadziałał');
+          }
+        }
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const errCause = err instanceof Error && (err as Error & { cause?: Error }).cause
+          ? String((err as Error & { cause?: Error }).cause?.message ?? (err as Error & { cause?: unknown }).cause)
+          : undefined;
         request.log.error(
-          { err, url: targetUrl.toString(), timeout: isAbort ? FETCH_TIMEOUT_MS : undefined },
+          { err, url: targetUrl.toString(), timeout: isAbort ? FETCH_TIMEOUT_MS : undefined, cause: errCause },
           isAbort ? 'Photos proxy: timeout pobierania z AKPA' : 'Photos proxy: błąd pobierania z AKPA',
         );
-        return reply.code(502).send({
+        const body: { error: string; message: string; cause?: string } = {
           error: 'Failed to fetch image from AKPA',
-          message: isAbort ? `Timeout ${FETCH_TIMEOUT_MS}ms` : (err instanceof Error ? err.message : 'Unknown error'),
-        });
+          message: isAbort ? `Timeout ${FETCH_TIMEOUT_MS}ms` : errMsg,
+        };
+        if (errCause) body.cause = errCause;
+        return reply.code(502).send(body);
       }
     }
   });
