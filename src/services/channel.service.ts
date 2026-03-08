@@ -33,7 +33,8 @@ export class ChannelService {
               },
               where: {
                 startsAt: {
-                  gte: new Date(),
+                  // Uwzględnij programy od 24 h wstecz, żeby bieżący program (już trwający) był w liście – potrzebne do paska postępu w ulubionych i na kanałach
+                  gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
                   lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 dni do przodu
                 },
               },

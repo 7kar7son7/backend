@@ -17,6 +17,9 @@ function buildAuthHeader(): string {
   return `Authorization: Bearer ${token}`;
 }
 
+/** Ścieżka do curla: w Alpine po apk add jest /usr/bin/curl (PATH w kontenerze może być ograniczony). */
+const CURL_PATH = process.platform === 'win32' ? 'curl.exe' : '/usr/bin/curl';
+
 /** Pobierz zdjęcie przez curl – AKPA przyjmuje request z curl, z Node zamyka połączenie. */
 function fetchWithCurl(
   url: string,
@@ -32,8 +35,7 @@ function fetchWithCurl(
       '-H', 'Accept: image/*',
       '--url', url,
     ];
-    const curlCmd = process.platform === 'win32' ? 'curl.exe' : 'curl';
-    const proc = child_process.spawn(curlCmd, args, {
+    const proc = child_process.spawn(CURL_PATH, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
@@ -84,6 +86,8 @@ function photoUrlWithQueryAuth(url: URL, token: string): string {
   return u.toString();
 }
 
+const USER_AGENT = 'Mozilla/5.0 (compatible; BackOnTV/1.0; +https://backon.tv)';
+
 /** Fallback: node:https (często AKPA i tak zamyka). */
 function fetchWithNodeHttps(
   url: URL,
@@ -95,7 +99,7 @@ function fetchWithNodeHttps(
       hostname: url.hostname,
       path: url.pathname + url.search,
       method: 'GET',
-      headers,
+      headers: { ...headers, 'User-Agent': USER_AGENT },
       timeout: timeoutMs,
     };
     const req = https.request(opts, (res) => {
@@ -121,6 +125,15 @@ function fetchWithNodeHttps(
 }
 
 export default async function photosRoutes(app: FastifyInstance) {
+  // Przy starcie: sprawdź czy curl jest w kontenerze (potrzebne do /photos/proxy)
+  const check = child_process.spawn(CURL_PATH, ['--version'], { stdio: 'ignore' });
+  check.on('error', () => {
+    app.log.warn({ curlPath: CURL_PATH }, 'Photos proxy: curl NOT found – rebuild Docker image without cache');
+  });
+  check.on('close', (code) => {
+    if (code === 0) app.log.info('Photos proxy: curl available');
+  });
+
   /**
    * GET /photos/proxy?url=<encoded_akpa_photo_url>
    * Zdjęcia programów – ZAWSZE z AKPA, z tokenem z env (AKPA_API_TOKEN). Nie zwracamy zdjęć z bazy.
@@ -196,7 +209,11 @@ export default async function photosRoutes(app: FastifyInstance) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      const res = await fetch(fetchUrl, { method: 'GET', headers: { ...headers }, signal: controller.signal });
+      const res = await fetch(fetchUrl, {
+        method: 'GET',
+        headers: { ...headers, 'User-Agent': USER_AGENT },
+        signal: controller.signal,
+      });
       clearTimeout(timeoutId);
       if (!res.ok) {
         const text = await res.text();

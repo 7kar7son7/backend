@@ -1,7 +1,8 @@
 FROM node:20-alpine
 
 # Zdjęcia programów z AKPA – proxy używa curl (na serwerze Node dostaje "other side closed")
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl \
+  && curl --version || (echo "Build error: curl required for /photos/proxy" && exit 1)
 
 WORKDIR /app
 
