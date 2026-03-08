@@ -2,7 +2,9 @@ import { FastifyInstance } from 'fastify';
 import { env } from '../config/env';
 
 const AKPA_PHOTO_HOST = 'api-epg.akpa.pl';
+const FETCH_TIMEOUT_MS = 15000;
 
+/** Ta sama logika co w akpa-importer: Bearer / Token / X-Api-Key */
 function buildAkpaAuthHeaders(): Record<string, string> {
   const token = (env.AKPA_API_TOKEN ?? process.env.AKPA_API_TOKEN ?? '').trim();
   if (!token) return {};
@@ -15,7 +17,7 @@ function buildAkpaAuthHeaders(): Record<string, string> {
 export default async function photosRoutes(app: FastifyInstance) {
   /**
    * GET /photos/proxy?url=<encoded_akpa_photo_url>
-   * Pobiera zdjęcie z AKPA z tokenem i zwraca klientowi (bez 403).
+   * Pobiera zdjęcie z AKPA z tokenem (ten sam AKPA_API_TOKEN co import EPG) i zwraca klientowi.
    */
   app.get('/proxy', async (request, reply) => {
     const urlRaw = (request.query as { url?: string }).url;
@@ -33,18 +35,38 @@ export default async function photosRoutes(app: FastifyInstance) {
     }
 
     const authHeaders = buildAkpaAuthHeaders();
+    if (Object.keys(authHeaders).length === 0) {
+      request.log.warn('Photos proxy: AKPA_API_TOKEN nie ustawiony – ustaw zmienną na serwerze (np. Railway/Docker env)');
+      return reply.code(503).send({
+        error: 'AKPA_API_TOKEN not configured',
+        message: 'Ustaw AKPA_API_TOKEN (i ewentualnie AKPA_AUTH_TYPE) w zmiennych środowiskowych na serwerze.',
+      });
+    }
+
     const headers: Record<string, string> = {
       Accept: 'image/*',
       ...authHeaders,
     };
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
     try {
-      const res = await fetch(targetUrl.toString(), { method: 'GET', headers });
+      const res = await fetch(targetUrl.toString(), {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
       if (!res.ok) {
         const text = await res.text();
-        app.log.warn({ status: res.status, url: targetUrl.toString() }, 'AKPA photo proxy upstream error');
-        return reply.code(res.status === 403 ? 502 : res.status).send({
-          error: res.status === 403 ? 'AKPA returned 403 – check AKPA_API_TOKEN in .env' : 'Upstream error',
+        const is403 = res.status === 403;
+        request.log.warn(
+          { status: res.status, url: targetUrl.toString(), hasToken: true },
+          is403 ? 'AKPA zwróciło 403 – sprawdź czy token jest ważny i AKPA_AUTH_TYPE (Bearer/Token/X-Api-Key)' : 'AKPA photo proxy upstream error',
+        );
+        return reply.code(is403 ? 502 : res.status).send({
+          error: is403 ? 'AKPA 403 – token nieprawidłowy lub wygasły' : 'Upstream error',
           message: text.slice(0, 200),
         });
       }
@@ -55,8 +77,16 @@ export default async function photosRoutes(app: FastifyInstance) {
         .type(contentType)
         .send(buffer);
     } catch (err) {
-      request.log.error(err, 'Photo proxy fetch failed');
-      return reply.code(502).send({ error: 'Failed to fetch image from AKPA' });
+      clearTimeout(timeoutId);
+      const isAbort = err instanceof Error && err.name === 'AbortError';
+      request.log.error(
+        { err, url: targetUrl.toString(), timeout: isAbort ? FETCH_TIMEOUT_MS : undefined },
+        isAbort ? 'Photos proxy: timeout pobierania z AKPA' : 'Photos proxy: błąd pobierania z AKPA',
+      );
+      return reply.code(502).send({
+        error: 'Failed to fetch image from AKPA',
+        message: isAbort ? `Timeout ${FETCH_TIMEOUT_MS}ms` : (err instanceof Error ? err.message : 'Unknown error'),
+      });
     }
   });
 }
