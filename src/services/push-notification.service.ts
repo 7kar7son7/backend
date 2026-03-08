@@ -7,12 +7,15 @@ import { env } from '../config/env';
 import { DeviceTokenService } from './device-token.service';
 import { chunkArray } from '../utils/array';
 
-/** Kanały powiadomień w aplikacji (muszą zgadzać się z mobile). Używane do własnego dźwięku. */
+/** Kanały powiadomień – ID muszą być identyczne jak w backon-tv-app/mobile (local_notifications_service.dart). */
 export const ANDROID_CHANNEL_IDS = {
   programReminders: 'program_reminders_channel_v3',
   events: 'events_channel_v3',
   dailyReminders: 'daily_reminders_channel_v3',
 } as const;
+
+/** Nazwa pliku dźwięku w res/raw (bez .mp3) – backon-tv-app/mobile/android/app/src/main/res/raw. */
+const ANDROID_NOTIFICATION_SOUND = 'backon_notification_v1';
 
 export type PushMessage = {
   title: string;
@@ -384,15 +387,18 @@ export class PushNotificationService {
           data: message.data ?? {},
           tokens: chunk,
           android: {
+            priority: 'high',
             notification: {
-              sound: 'backon_notification_v1',
               channelId,
+              sound: ANDROID_NOTIFICATION_SOUND,
+              defaultSound: false,
             },
           },
         };
 
         if (message.image) {
           multicastMessage.android = {
+            ...multicastMessage.android,
             notification: {
               ...multicastMessage.android!.notification,
               imageUrl: message.image,
@@ -469,6 +475,7 @@ export class PushNotificationService {
 
     for (const chunk of tokenChunks) {
       try {
+        const channelId = message.androidChannelId ?? ANDROID_CHANNEL_IDS.programReminders;
         const response = await fetch(FCM_ENDPOINT, {
           method: 'POST',
           headers: {
@@ -480,13 +487,11 @@ export class PushNotificationService {
             notification: {
               title: message.title,
               body: message.body,
-              sound: 'backon_notification_v1',
+              sound: ANDROID_NOTIFICATION_SOUND,
             },
             data: {
               ...message.data,
-              ...(message.androidChannelId
-                ? { android_channel_id: message.androidChannelId }
-                : {}),
+              android_channel_id: channelId,
             },
           }),
         });
