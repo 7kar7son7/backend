@@ -3,6 +3,12 @@ import { env } from '../config/env';
 
 const AKPA_PHOTO_HOST = 'api-epg.akpa.pl';
 const FETCH_TIMEOUT_MS = 15000;
+const MAX_RETRIES = 2; // przy "other side closed" / terminated – AKPA czasem zamyka połączenie
+
+function isRetryableConnectionError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes('terminated') || msg.includes('other side closed') || msg.includes('ECONNRESET') || msg.includes('socket hang up');
+}
 
 /** Ta sama logika co w akpa-importer: Bearer / Token / X-Api-Key */
 function buildAkpaAuthHeaders(): Record<string, string> {
@@ -48,45 +54,55 @@ export default async function photosRoutes(app: FastifyInstance) {
       ...authHeaders,
     };
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-    try {
-      const res = await fetch(targetUrl.toString(), {
-        method: 'GET',
-        headers,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!res.ok) {
-        const text = await res.text();
-        const is403 = res.status === 403;
-        request.log.warn(
-          { status: res.status, url: targetUrl.toString(), hasToken: true },
-          is403 ? 'AKPA zwróciło 403 – sprawdź czy token jest ważny i AKPA_AUTH_TYPE (Bearer/Token/X-Api-Key)' : 'AKPA photo proxy upstream error',
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      try {
+        const res = await fetch(targetUrl.toString(), {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (!res.ok) {
+          const text = await res.text();
+          const is403 = res.status === 403;
+          request.log.warn(
+            { status: res.status, url: targetUrl.toString(), hasToken: true },
+            is403 ? 'AKPA zwróciło 403 – sprawdź czy token jest ważny i AKPA_AUTH_TYPE (Bearer/Token/X-Api-Key)' : 'AKPA photo proxy upstream error',
+          );
+          return reply.code(is403 ? 502 : res.status).send({
+            error: is403 ? 'AKPA 403 – token nieprawidłowy lub wygasły' : 'Upstream error',
+            message: text.slice(0, 200),
+          });
+        }
+        const contentType = res.headers.get('content-type') || 'image/jpeg';
+        const buffer = Buffer.from(await res.arrayBuffer());
+        return reply
+          .header('Cache-Control', 'public, max-age=3600')
+          .type(contentType)
+          .send(buffer);
+      } catch (err) {
+        clearTimeout(timeoutId);
+        const isAbort = err instanceof Error && err.name === 'AbortError';
+        const retryable = !isAbort && isRetryableConnectionError(err);
+        if (retryable && attempt < MAX_RETRIES) {
+          request.log.warn(
+            { attempt: attempt + 1, maxRetries: MAX_RETRIES, url: targetUrl.toString() },
+            'Photos proxy: połączenie zamknięte przez AKPA, ponawiam',
+          );
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+          continue;
+        }
+        request.log.error(
+          { err, url: targetUrl.toString(), timeout: isAbort ? FETCH_TIMEOUT_MS : undefined },
+          isAbort ? 'Photos proxy: timeout pobierania z AKPA' : 'Photos proxy: błąd pobierania z AKPA',
         );
-        return reply.code(is403 ? 502 : res.status).send({
-          error: is403 ? 'AKPA 403 – token nieprawidłowy lub wygasły' : 'Upstream error',
-          message: text.slice(0, 200),
+        return reply.code(502).send({
+          error: 'Failed to fetch image from AKPA',
+          message: isAbort ? `Timeout ${FETCH_TIMEOUT_MS}ms` : (err instanceof Error ? err.message : 'Unknown error'),
         });
       }
-      const contentType = res.headers.get('content-type') || 'image/jpeg';
-      const buffer = Buffer.from(await res.arrayBuffer());
-      return reply
-        .header('Cache-Control', 'public, max-age=3600')
-        .type(contentType)
-        .send(buffer);
-    } catch (err) {
-      clearTimeout(timeoutId);
-      const isAbort = err instanceof Error && err.name === 'AbortError';
-      request.log.error(
-        { err, url: targetUrl.toString(), timeout: isAbort ? FETCH_TIMEOUT_MS : undefined },
-        isAbort ? 'Photos proxy: timeout pobierania z AKPA' : 'Photos proxy: błąd pobierania z AKPA',
-      );
-      return reply.code(502).send({
-        error: 'Failed to fetch image from AKPA',
-        message: isAbort ? `Timeout ${FETCH_TIMEOUT_MS}ms` : (err instanceof Error ? err.message : 'Unknown error'),
-      });
     }
   });
 }
