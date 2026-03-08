@@ -28,21 +28,30 @@ const dayQuerySchema = z.object({
 });
 
 export default async function programsRoutes(app: FastifyInstance) {
+  /** Zdjęcie programu – ZAWSZE z AKPA przez proxy (token), NIGDY z bazy. */
   app.get('/photo/:programId', async (request, reply) => {
     try {
       const { programId } = request.params as { programId: string };
       const program = await app.prisma.program.findUnique({
         where: { id: programId },
-        select: { imageData: true, imageContentType: true },
+        select: { imageUrl: true },
       });
-      if (!program?.imageData || !Buffer.isBuffer(program.imageData)) {
-        return reply.code(404).send({ error: 'Photo not found', message: 'Program has no photo in database' });
+      const akpaUrl = program?.imageUrl?.trim();
+      if (!akpaUrl) {
+        return reply.code(404).send({ error: 'Photo not found', message: 'Program has no photo URL' });
       }
-      const contentType = program.imageContentType ?? 'image/jpeg';
-      return reply
-        .header('Content-Type', contentType)
-        .header('Cache-Control', 'public, max-age=86400')
-        .send(Buffer.from(program.imageData));
+      try {
+        const parsed = new URL(akpaUrl);
+        const isAkpa =
+          parsed.hostname === 'api-epg.akpa.pl' || parsed.hostname.endsWith('.akpa.pl');
+        if (!isAkpa) {
+          return reply.code(404).send({ error: 'Photo not found', message: 'Program photo is not from AKPA' });
+        }
+      } catch {
+        return reply.code(404).send({ error: 'Photo not found', message: 'Invalid photo URL' });
+      }
+      const proxyPath = '/photos/proxy?url=' + encodeURIComponent(akpaUrl);
+      return reply.redirect(proxyPath, 302);
     } catch (error) {
       request.log.error(error, 'Failed to serve program photo');
       return reply.code(500).send({
