@@ -2,7 +2,7 @@ import { PrismaClient, NotificationSensitivity } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 
 import { env } from '../config/env';
-import { PushNotificationService, type PushMessage } from './push-notification.service';
+import { PushNotificationService, ANDROID_CHANNEL_IDS, type PushMessage } from './push-notification.service';
 
 export class NotificationService {
   constructor(private readonly prisma: PrismaClient, private readonly logger: FastifyBaseLogger) {
@@ -17,6 +17,7 @@ export class NotificationService {
     await this.pushNotification.send(deviceIds, {
       title: attempt === 1 ? 'Wydarzenie właśnie trwa' : 'Czy wydarzenie nadal trwa?',
       body: `${payload.programTitle} na kanale ${channelName}`,
+      androidChannelId: ANDROID_CHANNEL_IDS.events,
       data: {
         type: 'EVENT_REMINDER',
         eventId: payload.eventId,
@@ -67,6 +68,7 @@ export class NotificationService {
     const message: PushMessage = {
       title: 'KONIEC REKLAM',
       body: notificationBody,
+      androidChannelId: ANDROID_CHANNEL_IDS.events,
       data: {
         type: 'EVENT_STARTED',
         eventId: payload.eventId,
@@ -126,6 +128,7 @@ export class NotificationService {
     const message: PushMessage = {
       title: 'Potwierdzenie reklam',
       body: notificationBody,
+      androidChannelId: ANDROID_CHANNEL_IDS.events,
       data: {
         type: 'EVENT_CONFIRMED',
         eventId: payload.eventId,
@@ -201,6 +204,7 @@ export class NotificationService {
     await this.pushNotification.send(deviceIds, {
       title: 'Programy na dziś',
       body: 'Sprawdź, co dziś w TV i dodaj programy do śledzenia.',
+      androidChannelId: ANDROID_CHANNEL_IDS.dailyReminders,
       data: {
         type: 'DAILY_REMINDER',
       },
@@ -386,6 +390,7 @@ export class NotificationService {
         await this.pushNotification.send(deviceIds, {
           title: 'Start za 15 minut',
           body: `${program.title} | ${program.channel?.name ?? ''}`,
+          androidChannelId: ANDROID_CHANNEL_IDS.programReminders,
           data: {
             type: 'PROGRAM_START_SOON',
             programId: program.id,
@@ -409,6 +414,7 @@ export class NotificationService {
           await this.pushNotification.send(deviceIds, {
             title: 'Start za 15 minut',
             body: `${program.title} | ${program.channel?.name ?? ''}`,
+            androidChannelId: ANDROID_CHANNEL_IDS.programReminders,
             data: {
               type: 'PROGRAM_START_SOON',
               programId: program.id,
@@ -512,6 +518,7 @@ export class NotificationService {
         await this.pushNotification.send(deviceIds, {
           title: 'Start za 10 minut',
           body: `${program.title} | ${program.channel?.name ?? ''}`,
+          androidChannelId: ANDROID_CHANNEL_IDS.programReminders,
           data: {
             type: 'PROGRAM_START_SOON',
             programId: program.id,
@@ -535,6 +542,7 @@ export class NotificationService {
           await this.pushNotification.send(deviceIds, {
             title: 'Start za 10 minut',
             body: `${program.title} | ${program.channel?.name ?? ''}`,
+            androidChannelId: ANDROID_CHANNEL_IDS.programReminders,
             data: {
               type: 'PROGRAM_START_SOON',
               programId: program.id,
@@ -641,6 +649,7 @@ export class NotificationService {
         await this.pushNotification.send(deviceIds, {
           title: 'Start za 5 minut',
           body: `${program.title} | ${program.channel?.name ?? ''}`,
+          androidChannelId: ANDROID_CHANNEL_IDS.programReminders,
           data: {
             type: 'PROGRAM_START_SOON',
             programId: program.id,
@@ -663,6 +672,7 @@ export class NotificationService {
           await this.pushNotification.send(deviceIds, {
             title: 'Start za 5 minut',
             body: `${program.title} | ${program.channel?.name ?? ''}`,
+            androidChannelId: ANDROID_CHANNEL_IDS.programReminders,
             data: {
               type: 'PROGRAM_START_SOON',
               programId: program.id,
@@ -727,6 +737,7 @@ export class NotificationService {
         await this.pushNotification.send(deviceIds, {
           title: 'Program właśnie się zaczął',
           body: `${program.title} | ${program.channel?.name ?? ''}`,
+          androidChannelId: ANDROID_CHANNEL_IDS.programReminders,
           data: {
             type: 'PROGRAM_STARTED',
             programId: program.id,
@@ -748,6 +759,7 @@ export class NotificationService {
           await this.pushNotification.send(deviceIds, {
             title: 'Program właśnie się zaczął',
             body: `${program.title} | ${program.channel?.name ?? ''}`,
+            androidChannelId: ANDROID_CHANNEL_IDS.programReminders,
             data: {
               type: 'PROGRAM_STARTED',
               programId: program.id,
