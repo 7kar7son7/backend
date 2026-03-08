@@ -97,7 +97,7 @@ export default async function channelsRoutes(app: FastifyInstance) {
         episodeNumber: program.episodeNumber ?? null,
         startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
         endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-        imageUrl: programImageUrlForApi(program.imageUrl, undefined, { programId: String(program.id), hasImageData: Boolean((program as { imageHasData?: boolean }).imageHasData) }) ?? (program.imageUrl != null ? String(program.imageUrl) : null) ?? (resolvedLogoUrl ?? null),
+        imageUrl: programImageUrlForApi(program.imageUrl, env.PUBLIC_API_URL, { programId: String(program.id), hasImageData: Boolean((program as { imageHasData?: boolean }).imageHasData) }) ?? (program.imageUrl != null ? String(program.imageUrl) : null) ?? (resolvedLogoUrl ?? null),
         tags: Array.isArray(program.tags) ? program.tags.map((t: unknown) => String(t)) : [],
       }));
       // Zawsze zwracaj "programs" gdy includePrograms=true (nawet []), żeby ekran katalogu/guide widział te same klucze i pokazywał kanały.
