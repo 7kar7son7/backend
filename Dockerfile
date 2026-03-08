@@ -1,5 +1,8 @@
 FROM node:20-alpine
 
+# Zdjęcia programów z AKPA – proxy używa curl (na serwerze Node dostaje "other side closed")
+RUN apk add --no-cache curl
+
 WORKDIR /app
 
 # Kopiuj pliki package
