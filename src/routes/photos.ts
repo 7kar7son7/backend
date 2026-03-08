@@ -3,9 +3,10 @@ import { FastifyInstance } from 'fastify';
 import { env } from '../config/env';
 
 const AKPA_PHOTO_HOST = 'api-epg.akpa.pl';
-const FETCH_TIMEOUT_MS = 15000;
-const MAX_RETRIES = 5; // przy "other side closed" – więcej prób, dłuższe odstępy
-const RETRY_DELAY_MS = 800; // opóźnienie między próbami (800, 1600, 2400...)
+// Na Railway AKPA zamyka połączenie – krótszy timeout i mniej retry, żeby szybciej zwrócić 502 i app pokazała placeholder
+const FETCH_TIMEOUT_MS = 6000;
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 500;
 
 function isRetryableConnectionError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
