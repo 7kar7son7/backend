@@ -61,6 +61,77 @@ export default async function programsRoutes(app: FastifyInstance) {
     }
   });
 
+  /** Wyszukiwanie programów po tytule – używane w aplikacji jako /programs/search. */
+  app.get('/search', async (request, reply) => {
+    try {
+      const querySchema = z.object({
+        search: z.string().min(1),
+        limit: z
+          .string()
+          .optional()
+          .transform((value) => (value ? Number.parseInt(value, 10) : undefined)),
+      });
+
+      const query = querySchema.parse(request.query);
+      const now = new Date();
+
+      const programs = await app.prisma.program.findMany({
+        where: {
+          AND: [
+            {
+              title: {
+                contains: query.search,
+                mode: 'insensitive',
+              },
+            },
+            {
+              // Nie pokazuj programów, które już się skończyły
+              endsAt: {
+                gt: now,
+              },
+            },
+          ],
+        },
+        include: {
+          channel: true,
+        },
+        orderBy: {
+          startsAt: 'asc',
+        },
+        take: query.limit ?? 50,
+      });
+
+      return reply.send({
+        data: programs.map((program) => ({
+          id: program.id,
+          title: program.title,
+          channelId: program.channelId,
+          channelName: program.channel?.name ?? program.channelId ?? 'Nieznany kanał',
+          channelLogoUrl: program.channel ? resolveChannelLogoUrlForApi(program.channel) : null,
+          description: program.description,
+          seasonNumber: program.seasonNumber,
+          episodeNumber: program.episodeNumber,
+          startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
+          endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
+          imageUrl:
+            programImageUrlForApi(program.imageUrl, env.PUBLIC_API_URL, {
+              programId: program.id,
+              hasImageData: program.imageHasData,
+            }) ??
+            (program.channel ? resolveChannelLogoUrlForApi(program.channel) : null) ??
+            null,
+          tags: program.tags ?? [],
+        })),
+      });
+    } catch (error) {
+      request.log.error(error, 'Failed to search programs');
+      return reply.code(500).send({
+        error: 'Failed to search programs',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
   app.get('/:programId', async (request, reply) => {
     try {
       const { programId } = request.params as { programId: string };
