@@ -418,15 +418,27 @@ export class PushNotificationService {
 
         const response = await messaging.sendEachForMulticast(multicastMessage);
 
-        // Zbierz nieprawidłowe tokeny
+        // Zbierz nieprawidłowe tokeny i zaloguj szczegóły błędów FCM,
+        // żeby łatwiej debugować problemy z powiadomieniami.
         response.responses.forEach((result, index) => {
           if (!result.success) {
             const error = result.error;
+            const token = chunk[index];
+
+            this.logger.error(
+              {
+                index,
+                tokenPreview: token ? `${token.slice(0, 10)}...${token.slice(-5)}` : null,
+                code: (error as any)?.code,
+                message: error?.message,
+              },
+              'FCM send error for token',
+            );
+
             if (
               error?.code === 'messaging/registration-token-not-registered' ||
               error?.code === 'messaging/invalid-registration-token'
             ) {
-              const token = chunk[index];
               if (token) {
                 invalidTokens.push(token);
               }
