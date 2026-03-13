@@ -126,15 +126,57 @@ export default async function eventsRoutes(app: FastifyInstance) {
         body.programId,
       );
 
-      // Push „Koniec reklam” wysyłany dopiero po osiągnięciu min. X potwierdzeń (w POST /:eventId/confirm)
-      request.log.info(
-        { eventId: event.id, programId: body.programId, followerCountLimit: event.followerCountLimit },
-        'Event created; push will be sent when confirmation threshold is reached',
-      );
+      // Natychmiast wyślij push „KONIEC REKLAM” do wszystkich obserwujących (oprócz inicjatora),
+      // żeby na ich telefonach pojawił się popup do potwierdzenia.
+      try {
+        const recipientDeviceIds = followerDeviceIds.filter((id) => id !== deviceId);
+
+        if (recipientDeviceIds.length > 0) {
+          const programTitle = event.program.title || 'Program';
+          const channelName = event.program.channel?.name || '';
+
+          const payload = {
+            eventId: event.id,
+            programId: event.programId,
+            channelId: event.program.channelId,
+            programTitle: channelName ? `${channelName}: ${programTitle}` : programTitle,
+            startsAt: event.program.startsAt.toISOString(),
+            channelLogoUrl: event.program.channel
+              ? resolveChannelLogoUrlForApi(event.program.channel)
+              : null,
+          };
+
+          await notificationService.sendEventStartedNotification(
+            recipientDeviceIds,
+            payload,
+          );
+
+          request.log.info(
+            {
+              eventId: event.id,
+              programId: body.programId,
+              followerCountLimit: event.followerCountLimit,
+              recipientsCount: recipientDeviceIds.length,
+            },
+            'Event created; initial KONIEC REKLAM notification sent to followers',
+          );
+        } else {
+          request.log.info(
+            { eventId: event.id, programId: body.programId },
+            'Event created; no followers to notify about KONIEC REKLAM',
+          );
+        }
+      } catch (notifyError) {
+        // Nie blokuj utworzenia eventu jeśli wysyłka powiadomień się nie uda
+        request.log.warn(
+          notifyError,
+          'Failed to send initial KONIEC REKLAM notification after event creation',
+        );
+      }
 
       const formattedEvent = await finalizeEventResponse(event, followerDeviceIds, deviceId);
       return reply.code(201).send({
-        data: { ...formattedEvent, recipientsCount: 0 },
+        data: { ...formattedEvent, recipientsCount: followerDeviceIds.length },
       });
     } catch (error) {
       if (error instanceof Error) {
