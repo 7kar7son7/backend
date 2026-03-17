@@ -30,32 +30,16 @@ export class EventService {
       throw new Error('Program not found');
     }
 
-    // Ograniczenie: 1 zgłoszenie na blok reklamowy (ten sam device + program w oknie ważności)
-    const cooldownSince = new Date(Date.now() - EVENT_EXPIRY_MINUTES * 60 * 1000);
-    const existing = await this.prisma.event.findFirst({
+    const now = new Date();
+
+    // Spróbuj użyć istniejącego aktywnego eventu (dla tego programu i bloku reklamowego)
+    const activeEvent = await this.prisma.event.findFirst({
       where: {
         programId,
-        initiatorDeviceId: deviceId,
-        OR: [
-          { status: { in: [EventStatus.PENDING, EventStatus.VALIDATED] } },
-          { initiatedAt: { gte: cooldownSince } },
-        ],
-      },
-      orderBy: { initiatedAt: 'desc' },
-    });
-    if (existing) {
-      throw new Error('Already reported for this program (one report per ad block)');
-    }
-
-    const expiresAt = new Date(Date.now() + EVENT_EXPIRY_MINUTES * 60 * 1000);
-
-    const event = await this.prisma.event.create({
-      data: {
-        programId,
-        initiatorDeviceId: deviceId,
         status: EventStatus.PENDING,
-        expiresAt,
-        followerCountLimit: EVENT_CONFIRMATION_THRESHOLD,
+        expiresAt: {
+          gte: now,
+        },
       },
       include: {
         program: {
@@ -64,7 +48,29 @@ export class EventService {
           },
         },
       },
+      orderBy: { initiatedAt: Prisma.SortOrder.desc },
     });
+
+    const expiresAt = new Date(Date.now() + EVENT_EXPIRY_MINUTES * 60 * 1000);
+
+    const event =
+      activeEvent ??
+      (await this.prisma.event.create({
+        data: {
+          programId,
+          initiatorDeviceId: deviceId,
+          status: EventStatus.PENDING,
+          expiresAt,
+          followerCountLimit: EVENT_CONFIRMATION_THRESHOLD,
+        },
+        include: {
+          program: {
+            include: {
+              channel: true,
+            },
+          },
+        },
+      }));
 
     const followerDeviceIds = await this.syncEventFollowers(event.id, programId, deviceId, options?.skipInitiatorFollow);
 

@@ -437,7 +437,10 @@ export class PushNotificationService {
 
             if (
               error?.code === 'messaging/registration-token-not-registered' ||
-              error?.code === 'messaging/invalid-registration-token'
+              error?.code === 'messaging/invalid-registration-token' ||
+              // SenderId mismatch – token pochodzi z innego projektu Firebase,
+              // traktujemy go jak nieprawidłowy, żeby wymusić ponowną rejestrację.
+              error?.code === 'messaging/mismatched-credential'
             ) {
               if (token) {
                 invalidTokens.push(token);

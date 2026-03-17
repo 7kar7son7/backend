@@ -5,6 +5,9 @@ import { z } from 'zod';
 import { FollowService } from '../services/follow.service';
 import { getDeviceId } from '../utils/device';
 
+const FOLLOWS_CACHE_TTL_MS = 20_000; // 20 s – zmniejsza obciążenie przy wielu równoległych GET /follows
+const followsCache = new Map<string, { payload: unknown; expiresAt: number }>();
+
 const followBodySchema = z.object({
   type: z.enum([FollowType.CHANNEL, FollowType.PROGRAM]),
   targetId: z.string().uuid(),
@@ -22,8 +25,18 @@ export default async function followsRoutes(app: FastifyInstance) {
       return reply.badRequest('Missing X-Device-Id header');
     }
 
+    const cached = followsCache.get(deviceId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.payload;
+    }
+
     const follows = await followService.list(deviceId);
-    return { data: follows };
+    const payload = { data: follows };
+    followsCache.set(deviceId, {
+      payload,
+      expiresAt: Date.now() + FOLLOWS_CACHE_TTL_MS,
+    });
+    return payload;
   });
 
   app.post('/', async (request, reply) => {
@@ -43,6 +56,7 @@ export default async function followsRoutes(app: FastifyInstance) {
       } else {
         await followService.followProgram(deviceId, body.targetId);
       }
+      followsCache.delete(deviceId);
     } catch (error) {
       if (
         error instanceof Error &&
@@ -76,6 +90,7 @@ export default async function followsRoutes(app: FastifyInstance) {
     } else {
       await followService.unfollowProgram(deviceId, body.targetId);
     }
+    followsCache.delete(deviceId);
 
     // Zwracamy od razu bez list() – unikamy wolnego zapytania i timeoutu 408.
     // Aplikacja po unfollow i tak odświeża listę (np. _loadFollowedPrograms).

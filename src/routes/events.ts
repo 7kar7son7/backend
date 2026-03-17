@@ -330,55 +330,6 @@ export default async function eventsRoutes(app: FastifyInstance) {
         request.log.warn(error, 'Failed to send event confirmation notifications');
       }
 
-      // Sprawdź czy event osiągnął próg TERAZ (po dodaniu tego potwierdzenia)
-      // i czy wcześniej NIE był zwalidowany (żeby nie wysyłać powiadomień wielokrotnie)
-      const confirmationsCount = await eventService.getEventConfirmationsCount(params.eventId);
-      const eventAfter = await eventService.getEvent(params.eventId);
-      const shouldSendNotifications =
-        !wasAlreadyValidated &&
-        eventBefore.followerCountLimit &&
-        confirmationsCount >= eventBefore.followerCountLimit &&
-        eventAfter?.status === EventStatus.VALIDATED;
-
-      if (shouldSendNotifications) {
-        // Dodatkowe sprawdzenie - upewnij się że event nadal nie ma validatedAt
-        // (ochrona przed race condition gdy 2 requesty przychodzą równolegle)
-        const eventCheck = await eventService.getEvent(params.eventId);
-        if (eventCheck?.validatedAt) {
-          request.log.debug(
-            { eventId: params.eventId },
-            'Event already validated, skipping notification (race condition protection)',
-          );
-        } else {
-          // Pobierz wszystkich followers programu (oprócz tych którzy już zgłosili)
-          const recipients = await eventService.getProgramFollowersForNotification(
-            params.eventId,
-            eventBefore.programId,
-          );
-
-          if (recipients.length > 0) {
-            // Upewnij się, że mamy czytelny tytuł programu
-            const programTitle = eventBefore.program.title || 'Program';
-            const channelName = eventBefore.program.channel?.name || '';
-            
-            const payload = {
-              eventId: params.eventId,
-              programId: eventBefore.programId,
-              channelId: eventBefore.program.channelId,
-              programTitle: channelName ? `${channelName}: ${programTitle}` : programTitle,
-              startsAt: eventBefore.program.startsAt.toISOString(),
-              channelLogoUrl: eventBefore.program.channel ? resolveChannelLogoUrlForApi(eventBefore.program.channel) : null,
-            };
-
-            await notificationService.sendEventStartedNotification(recipients, payload);
-            request.log.info(
-              { eventId: params.eventId, recipientsCount: recipients.length },
-              'Sent event notifications after threshold reached',
-            );
-          }
-        }
-      }
-
       await pointsService.handleEventConfirmation({
         deviceId,
         eventId: params.eventId,
