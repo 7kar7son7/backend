@@ -71,9 +71,10 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
   );
 
   if (runOnStart) {
-    setImmediate(async () => {
+    const startDelayMs = 45 * 1000; // 45 s – pierwsze żądania API bez rywalizacji z importem
+    setTimeout(async () => {
       try {
-        app.log.info('Running initial EPG import on startup.');
+        app.log.info('Running initial EPG import on startup (after delay).');
         if (!useAkpa) {
           try {
             await runConfiguredGrab(app.log);
@@ -118,7 +119,7 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
           'Initial EPG import failed',
         );
       }
-    });
+    }, startDelayMs);
   }
 
   return task;
