@@ -46,6 +46,10 @@ const channelProgramsCache = new Map<string, { payload: unknown; expiresAt: numb
 const CHANNEL_SINGLE_CACHE_TTL_MS = 90 * 1000; // 90 s
 const channelSingleCache = new Map<string, { payload: unknown; expiresAt: number }>();
 
+/** Cache listy kanałów z programami (GET /channels?includePrograms=true&limit=…) – TTL 60 s, ogranicza obciążenie przy starcie aplikacji */
+const CHANNEL_LIST_CACHE_TTL_MS = 60 * 1000;
+const channelListCache = new Map<string, { payload: unknown; expiresAt: number }>();
+
 export default async function channelsRoutes(app: FastifyInstance) {
   const channelService = new ChannelService(app.prisma);
   const programService = new ProgramService(app.prisma);
@@ -65,6 +69,18 @@ export default async function channelsRoutes(app: FastifyInstance) {
     if (query.channelIds?.length) filters.channelIds = query.channelIds;
     if (query.limit !== undefined) filters.limit = query.limit;
     if (query.offset !== undefined) filters.offset = query.offset;
+
+    if (includePrograms && !query.search) {
+      const cacheKey = `list_${filters.limit ?? ''}_${filters.offset ?? 0}_${(filters.channelIds ?? []).slice().sort().join(',')}`;
+      const cached = channelListCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        request.log.info({ cacheKey }, 'GET /channels – lista z programami z cache');
+        return reply
+          .header('Cache-Control', 'private, max-age=60')
+          .type('application/json')
+          .send(cached.payload);
+      }
+    }
 
     const channels = await channelService.listChannels(filters);
     request.log.info(
@@ -109,10 +125,19 @@ export default async function channelsRoutes(app: FastifyInstance) {
       return { ...base, programs: programsList };
     });
 
+    const payload = { data: formattedChannels };
+    if (includePrograms && !query.search) {
+      const cacheKey = `list_${filters.limit ?? ''}_${filters.offset ?? 0}_${(filters.channelIds ?? []).slice().sort().join(',')}`;
+      channelListCache.set(cacheKey, {
+        payload,
+        expiresAt: Date.now() + CHANNEL_LIST_CACHE_TTL_MS,
+      });
+    }
+
     return reply
       .header('Cache-Control', 'private, max-age=60')
       .type('application/json')
-      .send({ data: formattedChannels });
+      .send(payload);
   });
 
   app.get('/:channelId', async (request, reply) => {
