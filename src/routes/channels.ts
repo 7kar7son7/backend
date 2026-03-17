@@ -43,6 +43,8 @@ const programsQuerySchema = z.object({
 
 const CHANNEL_PROGRAMS_CACHE_TTL_MS = 90 * 1000; // 90 s
 const channelProgramsCache = new Map<string, { payload: unknown; expiresAt: number }>();
+const CHANNEL_SINGLE_CACHE_TTL_MS = 90 * 1000; // 90 s
+const channelSingleCache = new Map<string, { payload: unknown; expiresAt: number }>();
 
 export default async function channelsRoutes(app: FastifyInstance) {
   const channelService = new ChannelService(app.prisma);
@@ -115,6 +117,11 @@ export default async function channelsRoutes(app: FastifyInstance) {
 
   app.get('/:channelId', async (request, reply) => {
     const params = z.object({ channelId: z.string().uuid() }).parse(request.params);
+    const cached = channelSingleCache.get(params.channelId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return reply.header('Cache-Control', 'private, max-age=60').send(cached.payload);
+    }
+
     const channel = await channelService.getChannel(params.channelId);
 
     if (!channel) {
@@ -122,9 +129,14 @@ export default async function channelsRoutes(app: FastifyInstance) {
     }
 
     const logoUrl = channelLogoUrlForResponse(channel);
+    const payload = { data: { ...channel, logoUrl } };
+    channelSingleCache.set(params.channelId, {
+      payload,
+      expiresAt: Date.now() + CHANNEL_SINGLE_CACHE_TTL_MS,
+    });
     return reply
       .header('Cache-Control', 'private, max-age=60')
-      .send({ data: { ...channel, logoUrl } });
+      .send(payload);
   });
 
   app.get('/:channelId/programs', async (request, reply) => {
