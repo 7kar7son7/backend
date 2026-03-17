@@ -220,6 +220,9 @@ export class EpgImportService {
       this.logger.info(
         `Zakończono kanał ${index + 1}/${totalChannels}: ${channel.name} (łącznie programów: ${programCount})`,
       );
+
+      // Oddać pętlę zdarzeń po każdym kanale, żeby żądania API (programy przy scrollu) mogły się wykonać
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
 
     this.logger.info(`✅ Import feedu EPG zakończony: ${channelCount} kanałów, ${programCount} programów`);
