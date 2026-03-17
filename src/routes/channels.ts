@@ -41,6 +41,9 @@ const programsQuerySchema = z.object({
     .transform((value) => (value ? new Date(value) : undefined)),
 });
 
+const CHANNEL_PROGRAMS_CACHE_TTL_MS = 90 * 1000; // 90 s
+const channelProgramsCache = new Map<string, { payload: unknown; expiresAt: number }>();
+
 export default async function channelsRoutes(app: FastifyInstance) {
   const channelService = new ChannelService(app.prisma);
   const programService = new ProgramService(app.prisma);
@@ -136,6 +139,12 @@ export default async function channelsRoutes(app: FastifyInstance) {
       filter.to = query.to;
     }
 
+    const cacheKey = `${params.channelId}_${query.from?.toISOString() ?? ''}_${query.to?.toISOString() ?? ''}`;
+    const cached = channelProgramsCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return reply.header('Cache-Control', 'private, max-age=60').send(cached.payload);
+    }
+
     const programs = await programService.listUpcomingByChannel(
       params.channelId,
       filter,
@@ -147,27 +156,32 @@ export default async function channelsRoutes(app: FastifyInstance) {
     }
 
     const logoUrl = channelLogoUrlForResponse(channel);
+    const payload = {
+      data: {
+        channel: { ...channel, logoUrl },
+        programs: programs.map((program) => ({
+          id: program.id,
+          title: program.title,
+          channelId: program.channelId,
+          channelName: channel.name,
+          channelLogoUrl: logoUrl,
+          description: program.description ?? null,
+          seasonNumber: program.seasonNumber ?? null,
+          episodeNumber: program.episodeNumber ?? null,
+          startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
+          endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
+          imageUrl: programImageUrlForApi(program.imageUrl, env.PUBLIC_API_URL, { programId: program.id, hasImageData: program.imageHasData }) ?? program.imageUrl ?? logoUrl ?? null,
+          tags: program.tags ?? [],
+        })),
+      },
+    };
+    channelProgramsCache.set(cacheKey, {
+      payload,
+      expiresAt: Date.now() + CHANNEL_PROGRAMS_CACHE_TTL_MS,
+    });
     return reply
       .header('Cache-Control', 'private, max-age=60')
-      .send({
-        data: {
-          channel: { ...channel, logoUrl },
-          programs: programs.map((program) => ({
-            id: program.id,
-            title: program.title,
-            channelId: program.channelId,
-            channelName: channel.name,
-            channelLogoUrl: logoUrl,
-            description: program.description ?? null,
-            seasonNumber: program.seasonNumber ?? null,
-            episodeNumber: program.episodeNumber ?? null,
-            startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
-            endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-            imageUrl: programImageUrlForApi(program.imageUrl, env.PUBLIC_API_URL, { programId: program.id, hasImageData: program.imageHasData }) ?? program.imageUrl ?? logoUrl ?? null,
-            tags: program.tags ?? [],
-          })),
-        },
-      });
+      .send(payload);
   });
 }
 
