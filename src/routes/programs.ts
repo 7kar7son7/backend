@@ -5,6 +5,9 @@ import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
 import { programImageUrlForApi } from '../utils/program-photo-url';
 import { env } from '../config/env';
 
+const PROGRAMS_DAY_CACHE_TTL_MS = 60 * 1000; // 1 min
+const programsDayCache = new Map<string, { payload: unknown; expiresAt: number }>();
+
 const dayQuerySchema = z.object({
   date: z
     .string()
@@ -192,6 +195,12 @@ export default async function programsRoutes(app: FastifyInstance) {
       const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
       const now = new Date();
 
+      const cacheKey = `${startOfDay.toISOString()}_${query.limit ?? 500}_${query.offset ?? 0}`;
+      const cached = programsDayCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.payload;
+      }
+
       app.log.info({
         selectedDate: selectedDate.toISOString(),
         startOfDay: startOfDay.toISOString(),
@@ -275,8 +284,8 @@ export default async function programsRoutes(app: FastifyInstance) {
           }
         });
       }
-      
-      return {
+
+      const payload = {
         data: sortedPrograms.map((program) => ({
             id: program.id,
             title: program.title,
@@ -292,6 +301,11 @@ export default async function programsRoutes(app: FastifyInstance) {
             tags: program.tags ?? [],
           })),
       };
+      programsDayCache.set(cacheKey, {
+        payload,
+        expiresAt: Date.now() + PROGRAMS_DAY_CACHE_TTL_MS,
+      });
+      return payload;
     } catch (error) {
       request.log.error(error, 'Failed to fetch programs for day');
       return reply.code(500).send({
