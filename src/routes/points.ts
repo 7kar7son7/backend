@@ -32,5 +32,12 @@ export default async function pointsRoutes(app: FastifyInstance) {
     await pointsService.addManualPoints(body.deviceId, body.amount, body.description);
     return reply.code(201).send({ status: 'ok' });
   });
+
+  /** Ranking – stub zwracający pustą listę, gdy funkcja nie jest włączona (unikamy 404). */
+  app.get('/leaderboard', async (request, reply) => {
+    const query = request.query as { limit?: string };
+    const limit = query?.limit ? Number.parseInt(String(query.limit), 10) : 50;
+    return { data: [] as Array<{ deviceId: string; points: number; rank?: number }> };
+  });
 }
 
