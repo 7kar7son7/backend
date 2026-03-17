@@ -77,8 +77,9 @@ export default async function followsRoutes(app: FastifyInstance) {
       await followService.unfollowProgram(deviceId, body.targetId);
     }
 
-    const follows = await followService.list(deviceId);
-    return { data: follows };
+    // Zwracamy od razu bez list() – unikamy wolnego zapytania i timeoutu 408.
+    // Aplikacja po unfollow i tak odświeża listę (np. _loadFollowedPrograms).
+    return { data: [] };
   });
 }
 
