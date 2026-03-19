@@ -27,5 +27,13 @@ export async function registerRoutes<T extends import('fastify').FastifyInstance
   await app.register(logosRoutes, { prefix: '/logos' });
 
   app.get('/logos-ping', async (_req, reply) => reply.send({ ok: true, msg: 'main app' }));
+
+  // app-ads.txt (IAB Tech Lab) – weryfikacja sprzedawców reklam dla aplikacji (AdMob/Google Play)
+  const APP_ADS_TXT = 'google.com, pub-6373424298734336, DIRECT, f08c47fec0942fa0\n';
+  app.get('/app-ads.txt', async (_req, reply) => {
+    return reply
+      .header('Content-Type', 'text/plain; charset=utf-8')
+      .send(APP_ADS_TXT);
+  });
 }
 
