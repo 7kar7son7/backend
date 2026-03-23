@@ -31,7 +31,7 @@ const dayQuerySchema = z.object({
 });
 
 export default async function programsRoutes(app: FastifyInstance) {
-  /** Zdjęcie programu – ZAWSZE z AKPA przez proxy (token), NIGDY z bazy. */
+  /** Przekierowanie na /photos/proxy (AKPA). Gdy zdjęcie jest w bazie, API zwraca /programs/:id/image. */
   app.get('/photo/:programId', async (request, reply) => {
     try {
       const { programId } = request.params as { programId: string };
@@ -130,51 +130,6 @@ export default async function programsRoutes(app: FastifyInstance) {
       request.log.error(error, 'Failed to search programs');
       return reply.code(500).send({
         error: 'Failed to search programs',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      });
-    }
-  });
-
-  app.get('/:programId', async (request, reply) => {
-    try {
-      const { programId } = request.params as { programId: string };
-
-      const program = await app.prisma.program.findUnique({
-        where: { id: programId },
-        include: {
-          channel: true,
-        },
-      });
-
-      if (!program) {
-        return reply.code(404).send({
-          error: 'Program not found',
-          message: `Program with id ${programId} not found`,
-        });
-      }
-
-      return reply
-        .header('Cache-Control', 'private, max-age=60')
-        .send({
-          data: {
-            id: program.id,
-            title: program.title,
-            channelId: program.channelId,
-            channelName: program.channel?.name ?? program.channelId ?? 'Nieznany kanał',
-            channelLogoUrl: program.channel ? resolveChannelLogoUrlForApi(program.channel) : null,
-            description: program.description,
-            seasonNumber: program.seasonNumber,
-            episodeNumber: program.episodeNumber,
-            startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
-            endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
-            imageUrl: programImageUrlForApi(program.imageUrl, env.PUBLIC_API_URL, { programId: program.id, hasImageData: program.imageHasData }) ?? (program.channel ? resolveChannelLogoUrlForApi(program.channel) : null) ?? null,
-            tags: program.tags ?? [],
-          },
-        });
-    } catch (error) {
-      request.log.error(error, 'Failed to fetch program');
-      return reply.code(500).send({
-        error: 'Failed to fetch program',
         message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
@@ -310,6 +265,79 @@ export default async function programsRoutes(app: FastifyInstance) {
       request.log.error(error, 'Failed to fetch programs for day');
       return reply.code(500).send({
         error: 'Failed to fetch programs',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+  /** Obraz programu z bazy (bez żądania do AKPA przy każdym wyświetleniu). Wypełnij: npm run scripts:backfill-program-photos */
+  app.get('/:programId/image', async (request, reply) => {
+    try {
+      const { programId } = request.params as { programId: string };
+      const program = await app.prisma.program.findUnique({
+        where: { id: programId },
+        select: { imageData: true, imageContentType: true, imageHasData: true },
+      });
+      if (!program?.imageHasData || !program.imageData) {
+        return reply.code(404).send({
+          error: 'Image not cached',
+          message: 'Brak zdjęcia w bazie – uruchom backfill lub użyj /photos/proxy.',
+        });
+      }
+      const ct = program.imageContentType?.trim() || 'image/jpeg';
+      return reply
+        .header('Cache-Control', 'public, max-age=86400')
+        .type(ct)
+        .send(Buffer.from(program.imageData));
+    } catch (error) {
+      request.log.error(error, 'Failed to serve program image from DB');
+      return reply.code(500).send({
+        error: 'Failed to serve program image',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+  app.get('/:programId', async (request, reply) => {
+    try {
+      const { programId } = request.params as { programId: string };
+
+      const program = await app.prisma.program.findUnique({
+        where: { id: programId },
+        include: {
+          channel: true,
+        },
+      });
+
+      if (!program) {
+        return reply.code(404).send({
+          error: 'Program not found',
+          message: `Program with id ${programId} not found`,
+        });
+      }
+
+      return reply
+        .header('Cache-Control', 'private, max-age=60')
+        .send({
+          data: {
+            id: program.id,
+            title: program.title,
+            channelId: program.channelId,
+            channelName: program.channel?.name ?? program.channelId ?? 'Nieznany kanał',
+            channelLogoUrl: program.channel ? resolveChannelLogoUrlForApi(program.channel) : null,
+            description: program.description,
+            seasonNumber: program.seasonNumber,
+            episodeNumber: program.episodeNumber,
+            startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
+            endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
+            imageUrl: programImageUrlForApi(program.imageUrl, env.PUBLIC_API_URL, { programId: program.id, hasImageData: program.imageHasData }) ?? (program.channel ? resolveChannelLogoUrlForApi(program.channel) : null) ?? null,
+            tags: program.tags ?? [],
+          },
+        });
+    } catch (error) {
+      request.log.error(error, 'Failed to fetch program');
+      return reply.code(500).send({
+        error: 'Failed to fetch program',
         message: error instanceof Error ? error.message : 'Unknown error',
       });
     }

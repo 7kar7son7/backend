@@ -3,12 +3,23 @@ import { PrismaClient } from '@prisma/client';
 
 import { env } from '../config/env';
 import { AKPA_LOGOS_DEFAULTS } from '../config/akpa-logos-defaults';
+import { enqueueAkpaRequest } from '../utils/akpa-request-queue';
 import { EpgImportService, type EpgChannel, type EpgFeed, type EpgProgram } from './epg-import.service';
 
 const DEFAULT_AKPA_API_URL = 'https://api-epg.akpa.pl/api/v1';
 const EXTERNAL_ID_PREFIX = 'akpa_';
 const LOGO_FILES = ['logo.png', 'logo.jpg', 'logo.jpeg', 'image.png', 'image.jpg', 'logo.svg'];
 const LOGO_CONCURRENCY = 6;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function epgChannelsPerRequest(): number {
+  const v = Number.parseInt(env.AKPA_EPG_CHANNELS_PER_REQUEST ?? process.env.AKPA_EPG_CHANNELS_PER_REQUEST ?? '', 10);
+  if (Number.isFinite(v) && v >= 1 && v <= 200) return v;
+  return 25;
+}
 
 type AkpaChannelRaw = {
   id?: string | number;
@@ -116,10 +127,12 @@ async function fetchChannels(
     useQueryAuth && token.trim()
       ? { Accept: 'application/json' }
       : buildAuthHeaders(token, authType);
-  const res = await fetch(url, {
-    method: 'GET',
-    headers,
-  });
+  const res = await enqueueAkpaRequest(() =>
+    fetch(url, {
+      method: 'GET',
+      headers,
+    }),
+  );
 
   if (!res.ok) {
     const text = await res.text();
@@ -393,27 +406,7 @@ type AkpaEpgChannel = {
   days?: Array<{ date?: string; schedule?: AkpaProgramRaw[] }>;
 };
 
-/**
- * Pobiera ramówkę z endpointu AKPA GET /epg?ch=id1&ch=id2&... (wymaga nagłówka Accept: application/json).
- * Zwraca mapę: channelId (string) -> EpgProgram[].
- */
-async function fetchEpgByChannelIds(
-  baseUrl: string,
-  channelIds: string[],
-  token: string,
-  authType: (typeof AUTH_TYPES)[number],
-  logger: FastifyBaseLogger,
-): Promise<Map<string, EpgProgram[]>> {
-  if (channelIds.length === 0) return new Map();
-  const epgUrl = `${baseUrl.replace(/\/+$/, '')}/epg?${channelIds.map((id) => `ch=${encodeURIComponent(id)}`).join('&')}`;
-  const headers = { ...buildAuthHeaders(token.trim(), authType), Accept: 'application/json' };
-  const res = await fetch(epgUrl, { method: 'GET', headers });
-  if (!res.ok) {
-    const text = await res.text();
-    logger.warn({ status: res.status, url: epgUrl.slice(0, 80), body: text.slice(0, 200) }, 'AKPA EPG error');
-    return new Map();
-  }
-  const json = (await res.json()) as unknown;
+function parseEpgResponseJson(json: unknown): Map<string, EpgProgram[]> {
   const channelsList =
     json && typeof json === 'object' && Array.isArray((json as Record<string, unknown>).channels)
       ? ((json as Record<string, unknown>).channels as AkpaEpgChannel[])
@@ -433,9 +426,78 @@ async function fetchEpgByChannelIds(
     }
     if (programs.length) byChannel.set(cid, programs);
   }
-  const total = [...byChannel.values()].reduce((s, p) => s + p.length, 0);
-  logger.info({ channelsWithSchedule: byChannel.size, totalPrograms: total }, 'AKPA: pobrano ramówkę z /epg');
   return byChannel;
+}
+
+/**
+ * Pobiera ramówkę z endpointu AKPA GET /epg?ch=id1&ch=id2&... (wymaga nagłówka Accept: application/json).
+ * Partiami + kolejka (rate limit), retry przy 429/503. Zwraca mapę: channelId (string) -> EpgProgram[].
+ */
+async function fetchEpgByChannelIds(
+  baseUrl: string,
+  channelIds: string[],
+  token: string,
+  authType: (typeof AUTH_TYPES)[number],
+  logger: FastifyBaseLogger,
+): Promise<Map<string, EpgProgram[]>> {
+  if (channelIds.length === 0) return new Map();
+  const base = baseUrl.replace(/\/+$/, '');
+  const headers = { ...buildAuthHeaders(token.trim(), authType), Accept: 'application/json' };
+  const batchSize = epgChannelsPerRequest();
+  const merged = new Map<string, EpgProgram[]>();
+  const maxAttempts = 5;
+
+  for (let i = 0; i < channelIds.length; i += batchSize) {
+    const batch = channelIds.slice(i, i + batchSize);
+    const epgUrl = `${base}/epg?${batch.map((id) => `ch=${encodeURIComponent(id)}`).join('&')}`;
+    let lastStatus = 0;
+    let ok = false;
+
+    for (let attempt = 0; attempt < maxAttempts && !ok; attempt++) {
+      const res = await enqueueAkpaRequest(() => fetch(epgUrl, { method: 'GET', headers }));
+      lastStatus = res.status;
+
+      if (res.status === 429 || res.status === 503) {
+        const ra = res.headers.get('retry-after');
+        const sec = ra ? Number.parseInt(ra, 10) : NaN;
+        const waitMs = Number.isFinite(sec) && sec > 0 ? Math.min(sec * 1000, 60_000) : 1500 * (attempt + 1);
+        logger.warn(
+          { status: res.status, attempt, waitMs, batchIndex: i, batchLen: batch.length },
+          'AKPA EPG: rate limit / niedostępne – ponawiam',
+        );
+        await sleep(waitMs);
+        continue;
+      }
+
+      if (!res.ok) {
+        const text = await res.text();
+        logger.warn(
+          { status: res.status, url: epgUrl.slice(0, 100), body: text.slice(0, 200), batchLen: batch.length },
+          'AKPA EPG error',
+        );
+        break;
+      }
+
+      const json = (await res.json()) as unknown;
+      const part = parseEpgResponseJson(json);
+      for (const [cid, progs] of part) {
+        const existing = merged.get(cid) ?? [];
+        merged.set(cid, existing.length ? [...existing, ...progs] : progs);
+      }
+      ok = true;
+    }
+
+    if (!ok && lastStatus !== 429 && lastStatus !== 503) {
+      logger.warn({ batchStart: i, batchLen: batch.length }, 'AKPA: partia /epg bez danych po błędzie');
+    }
+  }
+
+  const total = [...merged.values()].reduce((s, p) => s + p.length, 0);
+  logger.info(
+    { channelsWithSchedule: merged.size, totalPrograms: total, batches: Math.ceil(channelIds.length / batchSize) },
+    'AKPA: pobrano ramówkę z /epg',
+  );
+  return merged;
 }
 
 /**
@@ -449,7 +511,7 @@ async function fetchProgramsByChannel(
   logger: FastifyBaseLogger,
 ): Promise<Map<string, EpgProgram[]>> {
   const headers = buildAuthHeaders(token.trim(), authType);
-  const res = await fetch(programsUrl, { method: 'GET', headers });
+  const res = await enqueueAkpaRequest(() => fetch(programsUrl, { method: 'GET', headers }));
   if (!res.ok) {
     if (res.status === 404) {
       logger.info('AKPA: endpoint programów nie istnieje (404) – ramówka niedostępna z tego API.');

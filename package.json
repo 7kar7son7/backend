@@ -16,6 +16,7 @@
     "db:seed:pl": "tsx src/scripts/seed-polish-channels.ts",
     "epg:import:pl": "tsx src/scripts/import-selected-channels.ts",
     "db:check:programs": "tsx src/scripts/check-programs.ts",
+    "db:check:epg-coverage": "tsx src/scripts/check-epg-coverage.ts",
     "test:epg-source": "tsx src/scripts/test-epg-source.ts",
     "check:epg-channels": "tsx src/scripts/check-epg-channels.ts",
     "logos:restore": "tsx src/scripts/restore-logos.ts",

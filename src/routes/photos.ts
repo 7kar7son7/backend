@@ -1,9 +1,44 @@
 import * as https from 'node:https';
 import { FastifyInstance } from 'fastify';
 import { env } from '../config/env';
+import { enqueueAkpaRequest } from '../utils/akpa-request-queue';
 
 const AKPA_PHOTO_HOST = 'api-epg.akpa.pl';
 const FETCH_TIMEOUT_MS = 15000;
+const PROXY_CACHE_TTL_MS = 60 * 60 * 1000;
+const PROXY_CACHE_MAX =
+  Number.parseInt(process.env.AKPA_PHOTO_PROXY_CACHE_MAX ?? '', 10) > 0
+    ? Number.parseInt(process.env.AKPA_PHOTO_PROXY_CACHE_MAX ?? '', 10)
+    : 200;
+
+/** Klucz = URL zdjęcia z query (bez tokena dodawanego przy fetchu). */
+const photoProxyCache = new Map<string, { buffer: Buffer; contentType: string; expiresAt: number }>();
+
+function photoCacheGet(canonicalUrl: string): { buffer: Buffer; contentType: string } | null {
+  const e = photoProxyCache.get(canonicalUrl);
+  if (!e) return null;
+  if (e.expiresAt < Date.now()) {
+    photoProxyCache.delete(canonicalUrl);
+    return null;
+  }
+  return { buffer: e.buffer, contentType: e.contentType };
+}
+
+function photoCacheSet(canonicalUrl: string, buffer: Buffer, contentType: string) {
+  if (photoProxyCache.size >= PROXY_CACHE_MAX) {
+    const first = photoProxyCache.keys().next().value;
+    if (first !== undefined) photoProxyCache.delete(first);
+  }
+  photoProxyCache.set(canonicalUrl, {
+    buffer,
+    contentType,
+    expiresAt: Date.now() + PROXY_CACHE_TTL_MS,
+  });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 function buildAkpaAuthHeaders(): Record<string, string> {
   const token = (env.AKPA_API_TOKEN ?? process.env.AKPA_API_TOKEN ?? '').trim();
@@ -103,31 +138,53 @@ export default async function photosRoutes(app: FastifyInstance) {
       });
     }
 
+    const canonicalKey = targetUrl.toString();
+    const cached = photoCacheGet(canonicalKey);
+    if (cached) {
+      return reply
+        .header('Cache-Control', 'public, max-age=3600')
+        .type(cached.contentType)
+        .send(cached.buffer);
+    }
+
     const fetchUrl = photoUrlWithQueryAuth(targetUrl, token);
     const headers = { ...authHeaders };
 
-    try {
-      const { buffer, contentType } = await fetchWithHttps(
-        new URL(fetchUrl),
-        headers,
-        FETCH_TIMEOUT_MS,
-      );
-      request.log.info({ url: targetUrl.toString(), bytes: buffer.length }, 'Photos proxy: OK');
-      return reply
-        .header('Cache-Control', 'public, max-age=3600')
-        .type(contentType)
-        .send(buffer);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      const cause = err instanceof Error && (err as Error & { cause?: Error }).cause
-        ? String((err as Error & { cause?: Error }).cause?.message ?? '')
-        : undefined;
-      request.log.error({ err, url: targetUrl.toString(), cause }, 'Photos proxy: failed');
-      return reply.code(502).send({
-        error: 'Failed to fetch image from AKPA',
-        message: errMsg,
-        ...(cause ? { cause } : {}),
-      });
+    let lastErr: unknown;
+    const maxAttempts = 4;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const { buffer, contentType } = await enqueueAkpaRequest(() =>
+          fetchWithHttps(new URL(fetchUrl), headers, FETCH_TIMEOUT_MS),
+        );
+        photoCacheSet(canonicalKey, buffer, contentType);
+        request.log.info({ url: canonicalKey, bytes: buffer.length }, 'Photos proxy: OK');
+        return reply
+          .header('Cache-Control', 'public, max-age=3600')
+          .type(contentType)
+          .send(buffer);
+      } catch (err) {
+        lastErr = err;
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (errMsg.includes('HTTP 429') || errMsg.includes('HTTP 503')) {
+          request.log.warn({ url: canonicalKey, attempt }, 'Photos proxy: rate limit / unavailable, retry');
+          await sleep(Math.min(30_000, 1500 * (attempt + 1)));
+          continue;
+        }
+        break;
+      }
     }
+
+    const errMsg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+    const cause =
+      lastErr instanceof Error && (lastErr as Error & { cause?: Error }).cause
+        ? String((lastErr as Error & { cause?: Error }).cause?.message ?? '')
+        : undefined;
+    request.log.error({ err: lastErr, url: canonicalKey, cause }, 'Photos proxy: failed');
+    return reply.code(502).send({
+      error: 'Failed to fetch image from AKPA',
+      message: errMsg,
+      ...(cause ? { cause } : {}),
+    });
   });
 }

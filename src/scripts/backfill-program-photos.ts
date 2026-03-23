@@ -12,7 +12,8 @@ import { fetchAkpaImage, isAkpaPhotoUrl } from '../utils/fetch-akpa-image';
 
 const prisma = new PrismaClient();
 
-const CONCURRENCY = 5;
+/** Równoległe pobieranie z wielu instancji i tak trafia w limit AKPA – backfill i tak jest serializowany przez kolejkę; 2 wystarczy na DB. */
+const CONCURRENCY = 2;
 const BATCH_SIZE = 50;
 
 async function main() {

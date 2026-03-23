@@ -1,4 +1,5 @@
 import { env } from '../config/env';
+import { enqueueAkpaRequest } from './akpa-request-queue';
 
 const AKPA_PHOTO_HOST = 'api-epg.akpa.pl';
 
@@ -37,7 +38,7 @@ export async function fetchAkpaImage(
   };
 
   try {
-    const res = await fetch(imageUrl, { method: 'GET', headers });
+    const res = await enqueueAkpaRequest(() => fetch(imageUrl, { method: 'GET', headers }));
     if (!res.ok) return null;
     const contentType = res.headers.get('content-type')?.split(';')[0]?.trim() || 'image/jpeg';
     const buffer = Buffer.from(await res.arrayBuffer());
