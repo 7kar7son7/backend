@@ -13,8 +13,12 @@ export class ChannelService {
   }) {
     const { search, includePrograms, limit, offset, channelIds } = params;
 
-    // Ograniczenie: max 32 programy na kanał (ok. 1–2 dni). Lista: bez description (szybsze zapytanie i mniejszy JSON).
-    const PROGRAMS_PER_CHANNEL_LIMIT = 32;
+    // Lista kanałów: programy jeszcze nieskończone (endsAt > now) + start przed horyzontem.
+    // Poprzednio: startsAt w [now-24h, now+7d] + take 32 od najstarszego startu — na gęstych kanałach
+    // (TVP, Polsat, TVN…) pierwsze 32 pozycje to często same już zakończone bloki → karta „Zobacz ramówkę”, a /programs działał.
+    const PROGRAMS_PER_CHANNEL_LIMIT = 48;
+    const now = new Date();
+    const horizonEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     const include: Prisma.ChannelInclude | undefined =
       includePrograms === true
         ? {
@@ -32,11 +36,10 @@ export class ChannelService {
                 tags: true,
               },
               where: {
-                startsAt: {
-                  // Uwzględnij programy od 24 h wstecz, żeby bieżący program (już trwający) był w liście – potrzebne do paska postępu w ulubionych i na kanałach
-                  gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
-                  lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 dni do przodu
-                },
+                AND: [
+                  { endsAt: { gt: now } },
+                  { startsAt: { lt: horizonEnd } },
+                ],
               },
               orderBy: { startsAt: Prisma.SortOrder.asc },
               take: PROGRAMS_PER_CHANNEL_LIMIT,
