@@ -16,7 +16,8 @@ export class ChannelService {
     // Lista kanałów: programy jeszcze nieskończone (endsAt > now) + start przed horyzontem.
     // Poprzednio: startsAt w [now-24h, now+7d] + take 32 od najstarszego startu — na gęstych kanałach
     // (TVP, Polsat, TVN…) pierwsze 32 pozycje to często same już zakończone bloki → karta „Zobacz ramówkę”, a /programs działał.
-    const PROGRAMS_PER_CHANNEL_LIMIT = 48;
+    // Karta pokazuje max ~3 pozycje (teraz + 2 następne). Mniejszy take = lżejszy JSON i szybsze GET /channels przy 60 kanałach.
+    const PROGRAMS_PER_CHANNEL_LIMIT = 16;
     const now = new Date();
     const horizonEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     const include: Prisma.ChannelInclude | undefined =
