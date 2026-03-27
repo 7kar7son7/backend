@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getStaticLogosDir, readLogoFromStatic, getStaticLogosDebug } from '../utils/static-logos';
 import { Prisma } from '@prisma/client';
 
@@ -46,11 +47,40 @@ function rowVal<T>(row: Record<string, unknown>, ...keys: string[]): T | undefin
   return undefined;
 }
 
+/** URL /logos/akpa/{id} jest stały – agresywny cache po stronie klienta / CDN. */
+const LOGO_CACHE_CONTROL = 'public, max-age=86400, stale-while-revalidate=604800, immutable';
+
+type LogoHttpPayload = { body: Buffer; contentType: string; etag: string };
+
+function etagForLogoBody(body: Buffer): string {
+  return `W/"${createHash('sha1').update(body).digest('hex').slice(0, 24)}"`;
+}
+
+function sendLogo(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  payload: LogoHttpPayload,
+): unknown {
+  const inm = request.headers['if-none-match'];
+  if (inm === payload.etag) {
+    return reply
+      .code(304)
+      .header('Cache-Control', LOGO_CACHE_CONTROL)
+      .header('ETag', payload.etag)
+      .send();
+  }
+  return reply
+    .header('Cache-Control', LOGO_CACHE_CONTROL)
+    .header('ETag', payload.etag)
+    .type(payload.contentType)
+    .send(payload.body);
+}
+
 /** Logotypy z DB/AKPA są wolne (BLOB + sieć). Drugie żądanie tego samego id w tym samym procesie serwujemy z RAM. */
 const LOGO_SLOW_PATH_CACHE_MAX = 96;
-const logoSlowPathCache = new Map<string, { body: Buffer; contentType: string }>();
+const logoSlowPathCache = new Map<string, LogoHttpPayload>();
 
-function logoSlowPathCacheGet(channelId: string): { body: Buffer; contentType: string } | null {
+function logoSlowPathCacheGet(channelId: string): LogoHttpPayload | null {
   const v = logoSlowPathCache.get(channelId);
   if (!v) return null;
   logoSlowPathCache.delete(channelId);
@@ -59,17 +89,20 @@ function logoSlowPathCacheGet(channelId: string): { body: Buffer; contentType: s
 }
 
 function logoSlowPathCachePut(channelId: string, body: Buffer, contentType: string) {
+  const copy = Buffer.from(body);
+  const payload: LogoHttpPayload = {
+    body: copy,
+    contentType,
+    etag: etagForLogoBody(copy),
+  };
   if (logoSlowPathCache.has(channelId)) logoSlowPathCache.delete(channelId);
   while (logoSlowPathCache.size >= LOGO_SLOW_PATH_CACHE_MAX) {
     const first = logoSlowPathCache.keys().next().value;
     if (first === undefined) break;
     logoSlowPathCache.delete(first);
   }
-  logoSlowPathCache.set(channelId, { body: Buffer.from(body), contentType });
+  logoSlowPathCache.set(channelId, payload);
 }
-
-/** URL /logos/akpa/{id} jest stały – agresywny cache po stronie klienta / CDN. */
-const LOGO_CACHE_CONTROL = 'public, max-age=86400, stale-while-revalidate=604800, immutable';
 
 /** Ścieżki do JSON z embedded logos – __dirname lub cwd. Ładujemy raz przy starcie. */
 const embeddedJsonCandidates = [
@@ -81,16 +114,32 @@ const embeddedJsonCandidates = [
   ),
   join(process.cwd(), 'src', 'data', 'embedded-akpa-logos.json'),
 ];
-let embeddedLogosMap: Record<string, { contentType: string; base64: string }> = {};
+/** Predekodowane bufory (bez base64 przy każdym GET) + ETag pod 304 Not Modified. */
+const embeddedLogoPayloads = new Map<string, LogoHttpPayload>();
 for (const embeddedJsonPath of embeddedJsonCandidates) {
   if (!existsSync(embeddedJsonPath)) continue;
   try {
-    embeddedLogosMap = JSON.parse(readFileSync(embeddedJsonPath, 'utf8')) as Record<
+    const raw = JSON.parse(readFileSync(embeddedJsonPath, 'utf8')) as Record<
       string,
-      { contentType: string; base64: string }
+      { contentType?: string; base64?: string }
     >;
-    if (Object.keys(embeddedLogosMap).length > 0) {
-      console.log('[logos] załadowano embedded JSON:', Object.keys(embeddedLogosMap).length, 'logotypów');
+    for (const [id, e] of Object.entries(raw)) {
+      if (!e?.base64 || typeof e.base64 !== 'string') continue;
+      try {
+        const body = Buffer.from(e.base64, 'base64');
+        if (body.length === 0) continue;
+        const ct = (e.contentType && String(e.contentType).trim()) || 'image/png';
+        embeddedLogoPayloads.set(id, { body, contentType: ct, etag: etagForLogoBody(body) });
+      } catch {
+        /* pomijamy uszkodzony wpis */
+      }
+    }
+    if (embeddedLogoPayloads.size > 0) {
+      console.log(
+        '[logos] predekodowano embedded:',
+        embeddedLogoPayloads.size,
+        'logotypów (bufory w RAM, ETag; brak dekodowania base64 na żądanie)',
+      );
       break;
     }
   } catch (e) {
@@ -102,8 +151,8 @@ async function logosRoutes(app: FastifyInstance) {
   app.get('/ping', async (_request, reply) => {
     return reply.send({
       ok: true,
-      mapSize: Object.keys(embeddedLogosMap).length,
-      hasAkpa367: !!embeddedLogosMap['akpa_367'],
+      mapSize: embeddedLogoPayloads.size,
+      hasAkpa367: embeddedLogoPayloads.has('akpa_367'),
     });
   });
 
@@ -217,38 +266,21 @@ async function logosRoutes(app: FastifyInstance) {
     if (!channelId || !safeChannelId(channelId)) {
       return reply.code(400).send({ error: 'Invalid channel id' });
     }
-    const embeddedEntry = embeddedLogosMap[channelId];
-    if (embeddedEntry?.base64) {
-      return reply
-        .header('Cache-Control', LOGO_CACHE_CONTROL)
-        .type(embeddedEntry.contentType || 'image/png')
-        .send(Buffer.from(embeddedEntry.base64, 'base64'));
-    }
-    const jsonPath = join(process.cwd(), 'src', 'data', 'embedded-akpa-logos.json');
-    if (existsSync(jsonPath)) {
-      try {
-        const parsed = JSON.parse(readFileSync(jsonPath, 'utf8')) as Record<string, { contentType?: string; base64?: string }>;
-        const entry = parsed[channelId];
-        if (entry?.base64) {
-          return reply
-            .header('Cache-Control', LOGO_CACHE_CONTROL)
-            .type(entry.contentType || 'image/png')
-            .send(Buffer.from(entry.base64, 'base64'));
-        }
-      } catch {
-        // ignore
-      }
+    const embeddedPayload = embeddedLogoPayloads.get(channelId);
+    if (embeddedPayload) {
+      return sendLogo(request, reply, embeddedPayload);
     }
     const fromStatic = readLogoFromStatic(channelId);
     if (fromStatic) {
-      return reply
-        .header('Cache-Control', LOGO_CACHE_CONTROL)
-        .type(fromStatic.contentType)
-        .send(fromStatic.body);
+      return sendLogo(request, reply, {
+        body: fromStatic.body,
+        contentType: fromStatic.contentType,
+        etag: etagForLogoBody(fromStatic.body),
+      });
     }
     const cachedSlow = logoSlowPathCacheGet(channelId);
     if (cachedSlow) {
-      return reply.header('Cache-Control', LOGO_CACHE_CONTROL).type(cachedSlow.contentType).send(cachedSlow.body);
+      return sendLogo(request, reply, cachedSlow);
     }
     app.log.info({ channelId }, '[logo] static miss, reading DB');
     const channel = await app.prisma.channel.findUnique({
@@ -281,7 +313,11 @@ async function logosRoutes(app: FastifyInstance) {
         if (result) {
           app.log.info({ channelId, folder }, '[logo] 200 from AKPA (no DB channel)');
           logoSlowPathCachePut(channelId, result.body, result.contentType);
-          return reply.header('Cache-Control', LOGO_CACHE_CONTROL).type(result.contentType).send(result.body);
+          return sendLogo(request, reply, {
+            body: result.body,
+            contentType: result.contentType,
+            etag: etagForLogoBody(result.body),
+          });
         }
       }
       app.log.warn({ channelId }, '[logo] 404 channel not in DB and no AKPA fallback');
@@ -310,14 +346,22 @@ async function logosRoutes(app: FastifyInstance) {
     if (data && data.length > 0) {
       app.log.info({ channelId }, '[logo] 200 from DB');
       logoSlowPathCachePut(channelId, data, contentType);
-      return reply.header('Cache-Control', LOGO_CACHE_CONTROL).type(contentType).send(data);
+      return sendLogo(request, reply, {
+        body: data,
+        contentType,
+        etag: etagForLogoBody(data),
+      });
     }
     app.log.info({ channelId, channelName: channel.name }, '[logo] no DB logo, calling fetchAndSaveAkpaLogo');
     const fetched = await fetchAndSaveAkpaLogoForChannel(app.prisma, app.log, channelId);
     if (fetched) {
       app.log.info({ channelId }, '[logo] 200 from AKPA fetch');
       logoSlowPathCachePut(channelId, fetched.body, fetched.contentType);
-      return reply.header('Cache-Control', LOGO_CACHE_CONTROL).type(fetched.contentType).send(fetched.body);
+      return sendLogo(request, reply, {
+        body: fetched.body,
+        contentType: fetched.contentType,
+        etag: etagForLogoBody(fetched.body),
+      });
     }
     app.log.info({ channelId }, '[logo] fetchAndSaveAkpaLogo null – trying direct AKPA from map');
     const folderMap = loadAkpaLogoFolderMap();
@@ -342,7 +386,11 @@ async function logosRoutes(app: FastifyInstance) {
       if (directResult) {
         app.log.info({ channelId, folder }, '[logo] 200 from direct AKPA (after fetchAndSave null)');
         logoSlowPathCachePut(channelId, directResult.body, directResult.contentType);
-        return reply.header('Cache-Control', LOGO_CACHE_CONTROL).type(directResult.contentType).send(directResult.body);
+        return sendLogo(request, reply, {
+          body: directResult.body,
+          contentType: directResult.contentType,
+          etag: etagForLogoBody(directResult.body),
+        });
       }
     }
     app.log.warn(
@@ -364,7 +412,7 @@ async function logosRoutes(app: FastifyInstance) {
           const body = readFileSync(filePath);
           const ct = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : 'image/webp';
           logoSlowPathCachePut(channelId, body, ct);
-          return reply.header('Cache-Control', LOGO_CACHE_CONTROL).type(ct).send(body);
+          return sendLogo(request, reply, { body, contentType: ct, etag: etagForLogoBody(body) });
         }
       }
     }
