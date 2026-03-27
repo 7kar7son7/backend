@@ -1,6 +1,7 @@
 import { FollowType, PrismaClient } from '@prisma/client';
 
 import { env } from '../config/env';
+import { akpaLogoThumbDataUrl } from '../utils/akpa-logo-thumbs';
 import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
 import { programImageUrlForApi } from '../utils/program-photo-url';
 
@@ -39,15 +40,20 @@ export class FollowService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const channelJson = (ch: NonNullable<(typeof items)[0]['channel']>) => ({
-      id: ch.id,
-      externalId: ch.externalId,
-      name: ch.name,
-      description: ch.description,
-      logoUrl: resolveChannelLogoUrlForApi(ch),
-      category: ch.category,
-      countryCode: ch.countryCode,
-    });
+    const channelJson = (ch: NonNullable<(typeof items)[0]['channel']>) => {
+      const logoUrl = resolveChannelLogoUrlForApi(ch);
+      const logoThumbDataUrl = akpaLogoThumbDataUrl(String(ch.externalId));
+      return {
+        id: ch.id,
+        externalId: ch.externalId,
+        name: ch.name,
+        description: ch.description,
+        logoUrl,
+        logoThumbDataUrl: logoThumbDataUrl ?? null,
+        category: ch.category,
+        countryCode: ch.countryCode,
+      };
+    };
 
     return items.map((item) => {
       const base = {
@@ -68,6 +74,7 @@ export class FollowService {
 
       if (item.type === 'PROGRAM' && item.program) {
         const pch = item.program.channel;
+        const chThumb = pch ? akpaLogoThumbDataUrl(String(pch.externalId)) : null;
         return {
           ...base,
           channel: pch ? channelJson(pch) : null,
@@ -77,6 +84,7 @@ export class FollowService {
             channelId: item.program.channelId,
             channelName: pch?.name ?? item.program.channelId ?? 'Nieznany kanał',
             channelLogoUrl: pch ? resolveChannelLogoUrlForApi(pch) : null,
+            channelLogoThumbDataUrl: chThumb ?? null,
             description: item.program.description,
             seasonNumber: item.program.seasonNumber,
             episodeNumber: item.program.episodeNumber,

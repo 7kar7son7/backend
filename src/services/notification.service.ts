@@ -780,6 +780,8 @@ type ReminderPayload = {
   programTitle: string;
   startsAt: string;
   channelLogoUrl?: string | null;
+  /** data:image/webp;base64,... – tylko do payloadu data w aplikacji; FCM image nadal z channelLogoUrl (HTTPS). */
+  channelLogoThumbDataUrl?: string | null;
   channelName?: string | null;
 };
 

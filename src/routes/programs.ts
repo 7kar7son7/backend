@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { akpaLogoThumbDataUrl } from '../utils/akpa-logo-thumbs';
 import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
 import { channelPublicSelect } from '../services/prisma-selects';
 import { programImageUrlForApi } from '../utils/program-photo-url';
@@ -122,6 +123,7 @@ export default async function programsRoutes(app: FastifyInstance) {
           channelId: program.channelId,
           channelName: program.channel?.name ?? program.channelId ?? 'Nieznany kanał',
           channelLogoUrl: program.channel ? resolveChannelLogoUrlForApi(program.channel) : null,
+          channelLogoThumbDataUrl: program.channel ? akpaLogoThumbDataUrl(program.channel.externalId) : null,
           description: program.description,
           seasonNumber: program.seasonNumber,
           episodeNumber: program.episodeNumber,
@@ -268,6 +270,7 @@ export default async function programsRoutes(app: FastifyInstance) {
             channelId: program.channelId,
             channelName: program.channel?.name ?? program.channelId ?? 'Nieznany kanał',
             channelLogoUrl: program.channel ? resolveChannelLogoUrlForApi(program.channel) : null,
+            channelLogoThumbDataUrl: program.channel ? akpaLogoThumbDataUrl(program.channel.externalId) : null,
             description: program.description,
             seasonNumber: program.seasonNumber,
             episodeNumber: program.episodeNumber,
@@ -357,6 +360,7 @@ export default async function programsRoutes(app: FastifyInstance) {
             channelId: program.channelId,
             channelName: program.channel?.name ?? program.channelId ?? 'Nieznany kanał',
             channelLogoUrl: program.channel ? resolveChannelLogoUrlForApi(program.channel) : null,
+            channelLogoThumbDataUrl: program.channel ? akpaLogoThumbDataUrl(program.channel.externalId) : null,
             description: program.description,
             seasonNumber: program.seasonNumber,
             episodeNumber: program.episodeNumber,

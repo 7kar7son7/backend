@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { akpaLogoThumbDataUrl } from '../utils/akpa-logo-thumbs';
 import { channelLogoUrlForResponse, resolveChannelLogoUrlForApi } from '../utils/channel-logo';
 import { programImageUrlForApi } from '../utils/program-photo-url';
 import { env } from '../config/env';
@@ -92,12 +93,14 @@ export default async function channelsRoutes(app: FastifyInstance) {
     // logoUrl tylko jako pełny URL – logotypy z GET /logos/akpa/:id (lub embedded na prod).
     const formattedChannels = channels.map((channel) => {
       const resolvedLogoUrl = resolveChannelLogoUrlForApi(channel);
+      const logoThumbDataUrl = akpaLogoThumbDataUrl(String(channel.externalId));
       const base: Record<string, unknown> = {
         id: String(channel.id),
         externalId: String(channel.externalId),
         name: String(channel.name),
         description: channel.description != null ? String(channel.description) : null,
         logoUrl: resolvedLogoUrl ?? null,
+        logoThumbDataUrl: logoThumbDataUrl ?? null,
         category: channel.category != null ? String(channel.category) : null,
         countryCode: channel.countryCode != null ? String(channel.countryCode) : null,
       };
@@ -113,6 +116,7 @@ export default async function channelsRoutes(app: FastifyInstance) {
         channelId: String(program.channelId),
         channelName: String(channel.name),
         channelLogoUrl: resolvedLogoUrl ?? null,
+        channelLogoThumbDataUrl: logoThumbDataUrl ?? null,
         description: program.description != null ? String(program.description) : null,
         seasonNumber: program.seasonNumber ?? null,
         episodeNumber: program.episodeNumber ?? null,
@@ -154,7 +158,14 @@ export default async function channelsRoutes(app: FastifyInstance) {
     }
 
     const logoUrl = channelLogoUrlForResponse(channel);
-    const payload = { data: { ...channel, logoUrl } };
+    const logoThumbDataUrl = akpaLogoThumbDataUrl(String(channel.externalId));
+    const payload = {
+      data: {
+        ...channel,
+        logoUrl,
+        logoThumbDataUrl: logoThumbDataUrl ?? null,
+      },
+    };
     channelSingleCache.set(params.channelId, {
       payload,
       expiresAt: Date.now() + CHANNEL_SINGLE_CACHE_TTL_MS,
@@ -191,15 +202,17 @@ export default async function channelsRoutes(app: FastifyInstance) {
     }
 
     const logoUrl = channelLogoUrlForResponse(channel);
+    const logoThumbDataUrl = akpaLogoThumbDataUrl(String(channel.externalId));
     const payload = {
       data: {
-        channel: { ...channel, logoUrl },
+        channel: { ...channel, logoUrl, logoThumbDataUrl: logoThumbDataUrl ?? null },
         programs: programs.map((program) => ({
           id: program.id,
           title: program.title,
           channelId: program.channelId,
           channelName: channel.name,
           channelLogoUrl: logoUrl,
+          channelLogoThumbDataUrl: logoThumbDataUrl ?? null,
           description: program.description ?? null,
           seasonNumber: program.seasonNumber ?? null,
           episodeNumber: program.episodeNumber ?? null,

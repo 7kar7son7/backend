@@ -4,7 +4,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "rimraf dist && tsc && node -e \"const fs=require('fs'); const p='src/data/akpa-logo-folder-map.json'; if(fs.existsSync(p)){ fs.mkdirSync('dist/data',{recursive:true}); fs.copyFileSync(p,'dist/data/akpa-logo-folder-map.json'); fs.mkdirSync('data',{recursive:true}); fs.copyFileSync(p,'data/akpa-logo-folder-map.json'); }\"",
+    "build": "rimraf dist && tsc && node -e \"const fs=require('fs'); const path=require('path'); function copyPair(rel){ const p=path.join('src','data',rel); if(!fs.existsSync(p)) return; fs.mkdirSync('dist/data',{recursive:true}); fs.copyFileSync(p,path.join('dist','data',rel)); fs.mkdirSync('data',{recursive:true}); fs.copyFileSync(p,path.join('data',rel)); } copyPair('akpa-logo-folder-map.json'); copyPair('akpa-logo-thumbs.json');\"",
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -27,6 +27,7 @@
     "logos:export-db-to-static": "tsx src/scripts/export-logos-db-to-static.ts",
     "logos:check-mapping": "tsx src/scripts/check-logos-mapping.ts",
     "logos:embed": "tsx src/scripts/embed-logos-into-map.ts",
+    "logos:thumbs": "tsx src/scripts/generate-akpa-logo-thumbs.ts",
     "scripts:backfill-program-photos": "tsx src/scripts/backfill-program-photos.ts",
     "test:akpa-photo-token": "tsx src/scripts/test-akpa-photo-token.ts"
   },
@@ -39,6 +40,7 @@
     "@types/node": "^24.10.0",
     "prisma": "^6.19.0",
     "rimraf": "^6.1.0",
+    "sharp": "^0.34.5",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { EventService } from '../services/event.service';
 import { NotificationService } from '../services/notification.service';
 import { PointsService } from '../services/points.service';
+import { akpaLogoThumbDataUrl } from '../utils/akpa-logo-thumbs';
 import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
 import { getDeviceId } from '../utils/device';
 import { checkRateLimit, checkRateLimitHourly } from '../utils/rate-limit';
@@ -55,6 +56,9 @@ export default async function eventsRoutes(app: FastifyInstance) {
         ...event.program,
         channelName: event.program.channel?.name ?? event.program.channelId,
         channelLogoUrl: event.program.channel ? resolveChannelLogoUrlForApi(event.program.channel) : null,
+        channelLogoThumbDataUrl: event.program.channel
+          ? akpaLogoThumbDataUrl(event.program.channel.externalId)
+          : null,
       },
     };
   }
@@ -77,6 +81,9 @@ export default async function eventsRoutes(app: FastifyInstance) {
         ...event.program,
         channelName: event.program.channel?.name ?? event.program.channelId,
         channelLogoUrl: event.program.channel ? resolveChannelLogoUrlForApi(event.program.channel) : null,
+        channelLogoThumbDataUrl: event.program.channel
+          ? akpaLogoThumbDataUrl(event.program.channel.externalId)
+          : null,
       },
     }));
     
@@ -143,6 +150,9 @@ export default async function eventsRoutes(app: FastifyInstance) {
             startsAt: event.program.startsAt.toISOString(),
             channelLogoUrl: event.program.channel
               ? resolveChannelLogoUrlForApi(event.program.channel)
+              : null,
+            channelLogoThumbDataUrl: event.program.channel
+              ? akpaLogoThumbDataUrl(event.program.channel.externalId)
               : null,
           };
 
@@ -312,6 +322,9 @@ export default async function eventsRoutes(app: FastifyInstance) {
             programTitle: channelName ? `${channelName}: ${programTitle}` : programTitle,
             startsAt: eventBefore.program.startsAt.toISOString(),
             channelLogoUrl: eventBefore.program.channel ? resolveChannelLogoUrlForApi(eventBefore.program.channel) : null,
+            channelLogoThumbDataUrl: eventBefore.program.channel
+              ? akpaLogoThumbDataUrl(eventBefore.program.channel.externalId)
+              : null,
           };
 
           await notificationService.sendEventConfirmationNotification(
