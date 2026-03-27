@@ -1,8 +1,10 @@
 import { FollowType, PrismaClient } from '@prisma/client';
 
 import { env } from '../config/env';
-import { channelLogoUrlForResponse } from '../utils/channel-logo';
+import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
 import { programImageUrlForApi } from '../utils/program-photo-url';
+
+import { channelPublicSelect } from './prisma-selects';
 
 export class FollowService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -10,18 +12,43 @@ export class FollowService {
   async list(deviceId: string) {
     const items = await this.prisma.followedItem.findMany({
       where: { deviceId },
-      include: {
-        channel: true,
+      select: {
+        id: true,
+        deviceId: true,
+        type: true,
+        createdAt: true,
+        updatedAt: true,
+        channel: { select: channelPublicSelect },
         program: {
-          include: {
-            channel: true,
+          select: {
+            id: true,
+            title: true,
+            channelId: true,
+            description: true,
+            seasonNumber: true,
+            episodeNumber: true,
+            startsAt: true,
+            endsAt: true,
+            imageUrl: true,
+            imageHasData: true,
+            tags: true,
+            channel: { select: channelPublicSelect },
           },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    // Formatuj odpowiedź tak, aby program miał channelName i channelLogoUrl
+    const channelJson = (ch: NonNullable<(typeof items)[0]['channel']>) => ({
+      id: ch.id,
+      externalId: ch.externalId,
+      name: ch.name,
+      description: ch.description,
+      logoUrl: resolveChannelLogoUrlForApi(ch),
+      category: ch.category,
+      countryCode: ch.countryCode,
+    });
+
     return items.map((item) => {
       const base = {
         id: item.id,
@@ -34,43 +61,34 @@ export class FollowService {
       if (item.type === 'CHANNEL' && item.channel) {
         return {
           ...base,
-          channel: {
-            id: item.channel.id,
-            externalId: item.channel.externalId,
-            name: item.channel.name,
-            description: item.channel.description,
-            logoUrl: channelLogoUrlForResponse(item.channel),
-            category: item.channel.category,
-            countryCode: item.channel.countryCode,
-          },
+          channel: channelJson(item.channel),
           program: null,
         };
       }
 
       if (item.type === 'PROGRAM' && item.program) {
+        const pch = item.program.channel;
         return {
           ...base,
-          channel: item.program.channel ? {
-            id: item.program.channel.id,
-            externalId: item.program.channel.externalId,
-            name: item.program.channel.name,
-            description: item.program.channel.description,
-            logoUrl: channelLogoUrlForResponse(item.program.channel),
-            category: item.program.channel.category,
-            countryCode: item.program.channel.countryCode,
-          } : null,
+          channel: pch ? channelJson(pch) : null,
           program: {
             id: item.program.id,
             title: item.program.title,
             channelId: item.program.channelId,
-            channelName: item.program.channel?.name ?? item.program.channelId ?? 'Nieznany kanał',
-            channelLogoUrl: item.program.channel ? channelLogoUrlForResponse(item.program.channel) : null,
+            channelName: pch?.name ?? item.program.channelId ?? 'Nieznany kanał',
+            channelLogoUrl: pch ? resolveChannelLogoUrlForApi(pch) : null,
             description: item.program.description,
             seasonNumber: item.program.seasonNumber,
             episodeNumber: item.program.episodeNumber,
             startsAt: item.program.startsAt instanceof Date ? item.program.startsAt.toISOString() : item.program.startsAt,
             endsAt: item.program.endsAt instanceof Date ? item.program.endsAt.toISOString() : item.program.endsAt,
-            imageUrl: programImageUrlForApi(item.program.imageUrl, env.PUBLIC_API_URL, { programId: item.program.id, hasImageData: item.program.imageHasData }) ?? item.program.imageUrl ?? (item.program.channel ? channelLogoUrlForResponse(item.program.channel) : null),
+            imageUrl:
+              programImageUrlForApi(item.program.imageUrl, env.PUBLIC_API_URL, {
+                programId: item.program.id,
+                hasImageData: item.program.imageHasData,
+              }) ??
+              item.program.imageUrl ??
+              (pch ? resolveChannelLogoUrlForApi(pch) : null),
             tags: item.program.tags ?? [],
           },
         };

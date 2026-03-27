@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { FollowService } from '../services/follow.service';
 import { getDeviceId } from '../utils/device';
 
-const FOLLOWS_CACHE_TTL_MS = 20_000; // 20 s – zmniejsza obciążenie przy wielu równoległych GET /follows
+const FOLLOWS_CACHE_TTL_MS = 60_000; // 60 s – lista ulubionych bez logoData w SQL; dłuższy cache = mniej powtórzeń przy nawigacji
 const followsCache = new Map<string, { payload: unknown; expiresAt: number }>();
 
 const followBodySchema = z.object({

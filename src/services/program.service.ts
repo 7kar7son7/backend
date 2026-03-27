@@ -1,5 +1,7 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 
+import { channelPublicSelect } from './prisma-selects';
+
 export class ProgramService {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -29,7 +31,20 @@ export class ProgramService {
     return this.prisma.program.findMany({
       where,
       orderBy: { startsAt: Prisma.SortOrder.asc },
-      include: { channel: true },
+      select: {
+        id: true,
+        title: true,
+        channelId: true,
+        description: true,
+        seasonNumber: true,
+        episodeNumber: true,
+        startsAt: true,
+        endsAt: true,
+        imageUrl: true,
+        imageHasData: true,
+        tags: true,
+        channel: { select: channelPublicSelect },
+      },
     });
   }
 

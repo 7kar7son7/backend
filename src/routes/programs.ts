@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import { resolveChannelLogoUrlForApi } from '../utils/channel-logo';
+import { channelPublicSelect } from '../services/prisma-selects';
 import { programImageUrlForApi } from '../utils/program-photo-url';
 import { env } from '../config/env';
 
@@ -88,15 +89,25 @@ export default async function programsRoutes(app: FastifyInstance) {
               },
             },
             {
-              // Nie pokazuj programów, które już się skończyły
               endsAt: {
                 gt: now,
               },
             },
           ],
         },
-        include: {
-          channel: true,
+        select: {
+          id: true,
+          title: true,
+          channelId: true,
+          description: true,
+          seasonNumber: true,
+          episodeNumber: true,
+          startsAt: true,
+          endsAt: true,
+          imageUrl: true,
+          imageHasData: true,
+          tags: true,
+          channel: { select: channelPublicSelect },
         },
         orderBy: {
           startsAt: 'asc',
@@ -191,7 +202,6 @@ export default async function programsRoutes(app: FastifyInstance) {
                 },
               ],
             },
-            // Filtruj: pokazuj tylko programy, które jeszcze się nie zakończyły
             {
               endsAt: {
                 gt: minTime,
@@ -199,14 +209,25 @@ export default async function programsRoutes(app: FastifyInstance) {
             },
           ],
         },
-        include: {
-          channel: true,
+        select: {
+          id: true,
+          title: true,
+          channelId: true,
+          description: true,
+          seasonNumber: true,
+          episodeNumber: true,
+          startsAt: true,
+          endsAt: true,
+          imageUrl: true,
+          imageHasData: true,
+          tags: true,
+          channel: { select: channelPublicSelect },
         },
         orderBy: {
           startsAt: 'asc',
         },
-        take: query.limit ?? 500, // Domyślnie 500, ale można ograniczyć przez query
-        skip: query.offset ?? 0, // Paginacja
+        take: query.limit ?? 500,
+        skip: query.offset ?? 0,
       });
 
       app.log.info({
@@ -304,8 +325,19 @@ export default async function programsRoutes(app: FastifyInstance) {
 
       const program = await app.prisma.program.findUnique({
         where: { id: programId },
-        include: {
-          channel: true,
+        select: {
+          id: true,
+          title: true,
+          channelId: true,
+          description: true,
+          seasonNumber: true,
+          episodeNumber: true,
+          startsAt: true,
+          endsAt: true,
+          imageUrl: true,
+          imageHasData: true,
+          tags: true,
+          channel: { select: channelPublicSelect },
         },
       });
 

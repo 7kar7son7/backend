@@ -1,5 +1,7 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 
+import { channelPublicSelect } from './prisma-selects';
+
 export class ChannelService {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -20,33 +22,25 @@ export class ChannelService {
     const PROGRAMS_PER_CHANNEL_LIMIT = 16;
     const now = new Date();
     const horizonEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const include: Prisma.ChannelInclude | undefined =
-      includePrograms === true
-        ? {
-            programs: {
-              select: {
-                id: true,
-                title: true,
-                channelId: true,
-                startsAt: true,
-                endsAt: true,
-                imageUrl: true,
-                imageHasData: true,
-                seasonNumber: true,
-                episodeNumber: true,
-                tags: true,
-              },
-              where: {
-                AND: [
-                  { endsAt: { gt: now } },
-                  { startsAt: { lt: horizonEnd } },
-                ],
-              },
-              orderBy: { startsAt: Prisma.SortOrder.asc },
-              take: PROGRAMS_PER_CHANNEL_LIMIT,
-            },
-          }
-        : undefined;
+    const programSliceSelect = {
+      select: {
+        id: true,
+        title: true,
+        channelId: true,
+        startsAt: true,
+        endsAt: true,
+        imageUrl: true,
+        imageHasData: true,
+        seasonNumber: true,
+        episodeNumber: true,
+        tags: true,
+      },
+      where: {
+        AND: [{ endsAt: { gt: now } }, { startsAt: { lt: horizonEnd } }],
+      },
+      orderBy: { startsAt: Prisma.SortOrder.asc },
+      take: PROGRAMS_PER_CHANNEL_LIMIT,
+    };
 
     const where: Prisma.ChannelWhereInput = {};
 
@@ -62,10 +56,18 @@ export class ChannelService {
 
     const hasWhere = Object.keys(where).length > 0;
 
+    const select: Prisma.ChannelSelect =
+      includePrograms === true
+        ? {
+            ...channelPublicSelect,
+            programs: programSliceSelect,
+          }
+        : channelPublicSelect;
+
     return this.prisma.channel.findMany({
       ...(hasWhere ? { where } : {}),
       orderBy: { name: Prisma.SortOrder.asc },
-      ...(include ? { include } : {}),
+      select,
       ...(limit !== undefined ? { take: limit } : {}),
       ...(offset !== undefined ? { skip: offset } : {}),
     });
@@ -74,6 +76,7 @@ export class ChannelService {
   getChannel(channelId: string) {
     return this.prisma.channel.findUnique({
       where: { id: channelId },
+      select: channelPublicSelect,
     });
   }
 }

@@ -1,3 +1,5 @@
+import type { FastifyReply, FastifyRequest } from 'fastify';
+
 import healthRoutes from './health';
 import appRoutes from './app';
 import channelsRoutes from './channels';
@@ -27,6 +29,14 @@ export async function registerRoutes<T extends import('fastify').FastifyInstance
   await app.register(logosRoutes, { prefix: '/logos' });
 
   app.get('/logos-ping', async (_req, reply) => reply.send({ ok: true, msg: 'main app' }));
+
+  // Przeglądarki / skanery często proszą o ikony – szybka odpowiedź zamiast 404 w logach.
+  const emptyIcon = async (_req: FastifyRequest, reply: FastifyReply) =>
+    reply.code(204).header('Cache-Control', 'public, max-age=86400').send();
+  app.get('/favicon.ico', emptyIcon);
+  app.get('/favicon.png', emptyIcon);
+  app.get('/favicon.svg', emptyIcon);
+  app.get('/apple-touch-icon.png', emptyIcon);
 
   // app-ads.txt (IAB Tech Lab) – weryfikacja sprzedawców reklam dla aplikacji (AdMob/Google Play)
   const APP_ADS_TXT = 'google.com, pub-6373424298734336, DIRECT, f08c47fec0942fa0\n';
