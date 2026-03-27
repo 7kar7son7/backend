@@ -41,7 +41,7 @@ const programsQuerySchema = z.object({
     .transform((value) => (value ? new Date(value) : undefined)),
 });
 
-const CHANNEL_PROGRAMS_CACHE_TTL_MS = 90 * 1000; // 90 s
+const CHANNEL_PROGRAMS_CACHE_TTL_MS = 120 * 1000; // 120 s – ramówka dnia rzadko się zmienia w locie
 const channelProgramsCache = new Map<string, { payload: unknown; expiresAt: number }>();
 const CHANNEL_SINGLE_CACHE_TTL_MS = 90 * 1000; // 90 s
 const channelSingleCache = new Map<string, { payload: unknown; expiresAt: number }>();
@@ -182,12 +182,10 @@ export default async function channelsRoutes(app: FastifyInstance) {
       return reply.header('Cache-Control', 'private, max-age=60').send(cached.payload);
     }
 
-    const programs = await programService.listUpcomingByChannel(
-      params.channelId,
-      filter,
-    );
-
-    const channel = programs[0]?.channel ?? (await channelService.getChannel(params.channelId));
+    const [programs, channel] = await Promise.all([
+      programService.listUpcomingByChannel(params.channelId, filter),
+      channelService.getChannel(params.channelId),
+    ]);
     if (!channel) {
       return reply.notFound('Channel not found');
     }

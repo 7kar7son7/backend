@@ -1,7 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 
-import { channelPublicSelect } from './prisma-selects';
-
 export class ProgramService {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -28,6 +26,7 @@ export class ProgramService {
       where.startsAt = { gte: new Date() };
     }
 
+    // Bez JOIN na channel – kanał jest jeden; osobno getChannel() albo Promise.all w route (mniej danych z DB).
     return this.prisma.program.findMany({
       where,
       orderBy: { startsAt: Prisma.SortOrder.asc },
@@ -43,7 +42,6 @@ export class ProgramService {
         imageUrl: true,
         imageHasData: true,
         tags: true,
-        channel: { select: channelPublicSelect },
       },
     });
   }
