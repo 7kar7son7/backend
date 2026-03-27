@@ -1,15 +1,26 @@
 /**
- * Z embedded-akpa-logos.json robi akpa-logo-thumbs.json: WebP 48px, niska jakość – mały JSON do inline w /channels.
- * Uruchom: npm run logos:thumbs (wymaga sharp).
+ * Z embedded-akpa-logos.json robi akpa-logo-thumbs.json: WebP 48px.
+ * Lokalnie: npm i -D sharp && npm run logos:thumbs
+ * (Na produkcji/Dockerze sharp nie jest w package.json – plik JSON jest w repo.)
  */
+import { createRequire } from 'node:module';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import sharp from 'sharp';
+
+const nodeRequire = createRequire(__filename);
 
 const IN_JSON = join(process.cwd(), 'src', 'data', 'embedded-akpa-logos.json');
 const OUT_JSON = join(process.cwd(), 'src', 'data', 'akpa-logo-thumbs.json');
 
 async function main() {
+  let sharp: typeof import('sharp').default;
+  try {
+    sharp = nodeRequire('sharp') as typeof import('sharp').default;
+  } catch {
+    console.error('Brak modułu sharp. Zainstaluj lokalnie: npm i -D sharp');
+    process.exit(1);
+  }
+
   if (!existsSync(IN_JSON)) {
     console.error('Brak', IN_JSON, '— najpierw npm run logos:embed');
     process.exit(1);
