@@ -16,7 +16,7 @@ RUN npx prisma generate
 # Skopiuj kod źródłowy
 COPY src ./src
 
-# static/ (może być pusty – logotypy są w src/data/embedded-akpa-logos.ts)
+# static/logos/akpa – fallback na dysku; pełny zestaw jest też w src/data/embedded-akpa-logos.*
 COPY static ./static/
 
 # Zbuduj TypeScript

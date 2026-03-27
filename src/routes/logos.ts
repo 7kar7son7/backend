@@ -46,6 +46,31 @@ function rowVal<T>(row: Record<string, unknown>, ...keys: string[]): T | undefin
   return undefined;
 }
 
+/** Logotypy z DB/AKPA są wolne (BLOB + sieć). Drugie żądanie tego samego id w tym samym procesie serwujemy z RAM. */
+const LOGO_SLOW_PATH_CACHE_MAX = 96;
+const logoSlowPathCache = new Map<string, { body: Buffer; contentType: string }>();
+
+function logoSlowPathCacheGet(channelId: string): { body: Buffer; contentType: string } | null {
+  const v = logoSlowPathCache.get(channelId);
+  if (!v) return null;
+  logoSlowPathCache.delete(channelId);
+  logoSlowPathCache.set(channelId, v);
+  return v;
+}
+
+function logoSlowPathCachePut(channelId: string, body: Buffer, contentType: string) {
+  if (logoSlowPathCache.has(channelId)) logoSlowPathCache.delete(channelId);
+  while (logoSlowPathCache.size >= LOGO_SLOW_PATH_CACHE_MAX) {
+    const first = logoSlowPathCache.keys().next().value;
+    if (first === undefined) break;
+    logoSlowPathCache.delete(first);
+  }
+  logoSlowPathCache.set(channelId, { body: Buffer.from(body), contentType });
+}
+
+/** URL /logos/akpa/{id} jest stały – agresywny cache po stronie klienta / CDN. */
+const LOGO_CACHE_CONTROL = 'public, max-age=86400, stale-while-revalidate=604800, immutable';
+
 /** Ścieżki do JSON z embedded logos – __dirname lub cwd. Ładujemy raz przy starcie. */
 const embeddedJsonCandidates = [
   resolve(
@@ -155,7 +180,7 @@ async function logosRoutes(app: FastifyInstance) {
     });
   });
 
-  /** Diagnostyka: GET /logos/debug/embedded – czy build ma wbudowaną mapę logotypów (na produkcji: 59 = OK). Lazy-load żeby nie ciągnąć 46MB przy starcie. */
+  /** Diagnostyka: GET /logos/debug/embedded – czy build ma wbudowaną mapę (60 kanałów AKPA = pełny zestaw). */
   app.get('/debug/embedded', async (_request, reply) => {
     let count = 0;
     try {
@@ -168,7 +193,7 @@ async function logosRoutes(app: FastifyInstance) {
       ok: true,
       embeddedLogosCount: count,
       message:
-        count >= 59
+        count >= 60
           ? 'Embedded logos OK – GET /logos/akpa/:id powinien serwować z mapy.'
           : `Tylko ${count} w mapie – sprawdź npm run logos:embed i deploy.`,
     });
@@ -195,7 +220,7 @@ async function logosRoutes(app: FastifyInstance) {
     const embeddedEntry = embeddedLogosMap[channelId];
     if (embeddedEntry?.base64) {
       return reply
-        .header('Cache-Control', 'public, max-age=86400')
+        .header('Cache-Control', LOGO_CACHE_CONTROL)
         .type(embeddedEntry.contentType || 'image/png')
         .send(Buffer.from(embeddedEntry.base64, 'base64'));
     }
@@ -206,7 +231,7 @@ async function logosRoutes(app: FastifyInstance) {
         const entry = parsed[channelId];
         if (entry?.base64) {
           return reply
-            .header('Cache-Control', 'public, max-age=86400')
+            .header('Cache-Control', LOGO_CACHE_CONTROL)
             .type(entry.contentType || 'image/png')
             .send(Buffer.from(entry.base64, 'base64'));
         }
@@ -217,9 +242,13 @@ async function logosRoutes(app: FastifyInstance) {
     const fromStatic = readLogoFromStatic(channelId);
     if (fromStatic) {
       return reply
-        .header('Cache-Control', 'public, max-age=86400')
+        .header('Cache-Control', LOGO_CACHE_CONTROL)
         .type(fromStatic.contentType)
         .send(fromStatic.body);
+    }
+    const cachedSlow = logoSlowPathCacheGet(channelId);
+    if (cachedSlow) {
+      return reply.header('Cache-Control', LOGO_CACHE_CONTROL).type(cachedSlow.contentType).send(cachedSlow.body);
     }
     app.log.info({ channelId }, '[logo] static miss, reading DB');
     const channel = await app.prisma.channel.findUnique({
@@ -251,7 +280,8 @@ async function logosRoutes(app: FastifyInstance) {
         }
         if (result) {
           app.log.info({ channelId, folder }, '[logo] 200 from AKPA (no DB channel)');
-          return reply.header('Cache-Control', 'public, max-age=86400').type(result.contentType).send(result.body);
+          logoSlowPathCachePut(channelId, result.body, result.contentType);
+          return reply.header('Cache-Control', LOGO_CACHE_CONTROL).type(result.contentType).send(result.body);
         }
       }
       app.log.warn({ channelId }, '[logo] 404 channel not in DB and no AKPA fallback');
@@ -279,19 +309,15 @@ async function logosRoutes(app: FastifyInstance) {
 
     if (data && data.length > 0) {
       app.log.info({ channelId }, '[logo] 200 from DB');
-      return reply
-        .header('Cache-Control', 'public, max-age=86400')
-        .type(contentType)
-        .send(data);
+      logoSlowPathCachePut(channelId, data, contentType);
+      return reply.header('Cache-Control', LOGO_CACHE_CONTROL).type(contentType).send(data);
     }
     app.log.info({ channelId, channelName: channel.name }, '[logo] no DB logo, calling fetchAndSaveAkpaLogo');
     const fetched = await fetchAndSaveAkpaLogoForChannel(app.prisma, app.log, channelId);
     if (fetched) {
       app.log.info({ channelId }, '[logo] 200 from AKPA fetch');
-      return reply
-        .header('Cache-Control', 'public, max-age=86400')
-        .type(fetched.contentType)
-        .send(fetched.body);
+      logoSlowPathCachePut(channelId, fetched.body, fetched.contentType);
+      return reply.header('Cache-Control', LOGO_CACHE_CONTROL).type(fetched.contentType).send(fetched.body);
     }
     app.log.info({ channelId }, '[logo] fetchAndSaveAkpaLogo null – trying direct AKPA from map');
     const folderMap = loadAkpaLogoFolderMap();
@@ -315,7 +341,8 @@ async function logosRoutes(app: FastifyInstance) {
       }
       if (directResult) {
         app.log.info({ channelId, folder }, '[logo] 200 from direct AKPA (after fetchAndSave null)');
-        return reply.header('Cache-Control', 'public, max-age=86400').type(directResult.contentType).send(directResult.body);
+        logoSlowPathCachePut(channelId, directResult.body, directResult.contentType);
+        return reply.header('Cache-Control', LOGO_CACHE_CONTROL).type(directResult.contentType).send(directResult.body);
       }
     }
     app.log.warn(
@@ -336,7 +363,8 @@ async function logosRoutes(app: FastifyInstance) {
           app.log.info({ channelId, filePath }, '[logo] 200 from static dir file');
           const body = readFileSync(filePath);
           const ct = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : 'image/webp';
-          return reply.header('Cache-Control', 'public, max-age=86400').type(ct).send(body);
+          logoSlowPathCachePut(channelId, body, ct);
+          return reply.header('Cache-Control', LOGO_CACHE_CONTROL).type(ct).send(body);
         }
       }
     }
