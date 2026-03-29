@@ -83,6 +83,7 @@ export class FollowService {
             title: item.program.title,
             channelId: item.program.channelId,
             channelName: pch?.name ?? item.program.channelId ?? 'Nieznany kanał',
+            channelExternalId: pch?.externalId ?? null,
             channelLogoUrl: pch ? resolveChannelLogoUrlForApi(pch) : null,
             channelLogoThumbDataUrl: chThumb ?? null,
             description: item.program.description,
