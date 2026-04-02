@@ -12,6 +12,27 @@ import { importAkpaEpg } from '../services/akpa-importer';
 import { EpgImportService } from '../services/epg-import.service';
 import { syncAkpaLogosToDb } from '../services/sync-akpa-logos-to-db.service';
 
+/** Po imporcie AKPA: w tle uzupełnia logoData (nowe kanały / brak w bazie). */
+function scheduleAkpaLogoSyncAfterImport(app: FastifyInstance, reason: 'startup' | 'cron'): void {
+  const logosBase = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? AKPA_LOGOS_DEFAULTS.BASE_URL).trim();
+  const logosUser = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? AKPA_LOGOS_DEFAULTS.USER).trim();
+  const logosPassword = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? AKPA_LOGOS_DEFAULTS.PASSWORD).trim();
+  if (!logosBase || !logosUser || !logosPassword) {
+    app.log.warn(
+      { reason },
+      'AKPA_LOGOS_BASE_URL / USER / PASSWORD nie ustawione – sync logotypów do bazy pominięty. Ustaw na produkcji, żeby API zwracało więcej logo z bazy.',
+    );
+    return;
+  }
+  setImmediate(async () => {
+    try {
+      await syncAkpaLogosToDb(app.prisma, app.log);
+    } catch (err) {
+      app.log.warn({ err, reason }, 'Sync logotypów AKPA do bazy zakończony błędem');
+    }
+  });
+}
+
 export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
   const forceIptv = env.EPG_SOURCE === 'iptv' || process.env.EPG_SOURCE === 'iptv';
   const hasAkpaToken = !!(env.AKPA_API_TOKEN ?? process.env.AKPA_API_TOKEN);
@@ -43,7 +64,10 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
 
       isRunning = true;
       try {
-        app.log.info('EPG auto-import started.');
+        app.log.info(
+          { trigger: 'cron', schedule, timezone, startedAt: new Date().toISOString() },
+          'EPG auto-import started (cron tick).',
+        );
         if (!useAkpa) {
           try {
             await runConfiguredGrab(app.log);
@@ -57,8 +81,12 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
           const maxAgeDays = Math.max(1, Number.parseInt(env.EPG_PRUNE_MAX_AGE_DAYS ?? process.env.EPG_PRUNE_MAX_AGE_DAYS ?? '14', 10) || 14);
           const epgService = new EpgImportService(app.prisma, app.log);
           await epgService.pruneOldPrograms(maxAgeDays);
+          scheduleAkpaLogoSyncAfterImport(app, 'cron');
         }
-        app.log.info('EPG auto-import finished successfully.');
+        app.log.info(
+          { trigger: 'cron', finishedAt: new Date().toISOString() },
+          'EPG auto-import finished successfully.',
+        );
       } catch (error) {
         app.log.error(error, 'EPG auto-import failed');
       } finally {
@@ -90,23 +118,8 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
           await epgService.pruneOldPrograms(maxAgeDays);
         }
         app.log.info('Initial EPG import finished successfully.');
-        // Po imporcie AKPA: uzupełnij logoData w bazie (w tle), żeby GET /logos/akpa zwracał z bazy
         if (useAkpa) {
-          const logosBase = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? AKPA_LOGOS_DEFAULTS.BASE_URL).trim();
-          const logosUser = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? AKPA_LOGOS_DEFAULTS.USER).trim();
-          const logosPassword = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? AKPA_LOGOS_DEFAULTS.PASSWORD).trim();
-          if (!logosBase || !logosUser || !logosPassword) {
-            app.log.warn(
-              'AKPA_LOGOS_BASE_URL / USER / PASSWORD nie ustawione – logotypy nie będą w bazie. Ustaw te zmienne na produkcji i zrestartuj (sync wypełni logoData po starcie).',
-            );
-          }
-          setImmediate(async () => {
-            try {
-              await syncAkpaLogosToDb(app.prisma, app.log);
-            } catch (err) {
-              app.log.warn({ err }, 'Sync logotypów AKPA do bazy zakończony błędem');
-            }
-          });
+          scheduleAkpaLogoSyncAfterImport(app, 'startup');
         }
       } catch (error) {
         app.log.error(
