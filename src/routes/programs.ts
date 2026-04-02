@@ -178,10 +178,12 @@ export default async function programsRoutes(app: FastifyInstance) {
         queryDate: query.date?.toISOString(),
       }, 'Fetching programs for day');
 
-      // Dla dzisiejszego dnia: pokazuj tylko programy aktualnie emitowane lub przyszłe
-      // Dla innych dni: pokazuj wszystkie programy z tego dnia
+      // Koniec audycji musi być po początku wybranego dnia (UTC), nie po „teraz”.
+      // Gdyby dla „dziś” użyć minTime = now, kanały z przerwą (wszystko na dziś już się skończyło,
+      // następna dopiero za kilka godzin) nie dostałyby żadnego wpisu w /programs/day — aplikacja
+      // scala ten feed na karty kanałów i pokazywała pustą ramówkę mimo pełnych danych z GET /channels/:id/programs.
       const isToday = selectedDate.toDateString() === new Date().toDateString();
-      const minTime = isToday ? now : startOfDay;
+      const minTime = startOfDay;
 
       // Filtruj programy z kanałami bezpośrednio w zapytaniu - szybsze!
       const programs = await app.prisma.program.findMany({
