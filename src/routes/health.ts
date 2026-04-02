@@ -3,6 +3,16 @@ import os from 'node:os';
 import { Prisma } from '@prisma/client';
 
 const healthRoutes = fp(async (app) => {
+  /**
+   * Liveness bez bazy – pod reverse proxy / orchestrator (Docker, DevStudioIT).
+   * Gdy import EPG obciąża pool Prisma, `/health` może chwilowo wolno odpowiadać;
+   * ten endpoint zwraca 200 od razu, żeby uniknąć fałszywych restartów i 502.
+   */
+  app.get('/live', async () => ({
+    status: 'live',
+    timestamp: new Date().toISOString(),
+  }));
+
   /** Monitoring: CPU (load average) i RAM – do alertów i wykresów. */
   app.get('/metrics', async () => {
     const mem = process.memoryUsage();
