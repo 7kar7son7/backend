@@ -1,4 +1,4 @@
-import fp from 'fastify-plugin';
+import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { env } from '../config/env';
 import { AbuseService } from '../services/abuse.service';
@@ -16,7 +16,7 @@ const deleteDataSchema = z.object({
   confirm: z.literal(true),
 });
 
-const appRoutes = fp(async (app) => {
+export default async function appRoutes(app: FastifyInstance) {
   app.get('/version', async () => {
     return {
       data: {
@@ -59,6 +59,4 @@ const appRoutes = fp(async (app) => {
     app.log.info({ scope: body.scope, deleted }, 'Delete-data executed');
     return reply.code(200).send({ status: 'ok', scope: body.scope, deleted });
   });
-});
-
-export default appRoutes;
+}

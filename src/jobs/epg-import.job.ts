@@ -12,8 +12,10 @@ import { importAkpaEpg } from '../services/akpa-importer';
 import { EpgImportService } from '../services/epg-import.service';
 import { syncAkpaLogosToDb } from '../services/sync-akpa-logos-to-db.service';
 
+type LogoSyncReason = 'startup' | 'cron' | 'http';
+
 /** Po imporcie AKPA: w tle uzupełnia logoData (nowe kanały / brak w bazie). */
-function scheduleAkpaLogoSyncAfterImport(app: FastifyInstance, reason: 'startup' | 'cron'): void {
+function scheduleAkpaLogoSyncAfterImport(app: FastifyInstance, reason: LogoSyncReason): void {
   const logosBase = (env.AKPA_LOGOS_BASE_URL ?? process.env.AKPA_LOGOS_BASE_URL ?? AKPA_LOGOS_DEFAULTS.BASE_URL).trim();
   const logosUser = (env.AKPA_LOGOS_USER ?? process.env.AKPA_LOGOS_USER ?? AKPA_LOGOS_DEFAULTS.USER).trim();
   const logosPassword = (env.AKPA_LOGOS_PASSWORD ?? process.env.AKPA_LOGOS_PASSWORD ?? AKPA_LOGOS_DEFAULTS.PASSWORD).trim();
@@ -33,6 +35,65 @@ function scheduleAkpaLogoSyncAfterImport(app: FastifyInstance, reason: 'startup'
   });
 }
 
+/** Jeden import naraz (cron + start + HTTP) – zapobiega nakładaniu się i crashom przy równoległym imporcie. */
+let epgImportCycleInProgress = false;
+
+/**
+ * Pełny cykl: (opcjonalnie grab) → import → prune (AKPA) → sync logo.
+ * Używany przez cron, import po starcie oraz (w tle) POST /epg/trigger.
+ */
+export async function runEpgImportCycle(app: FastifyInstance, trigger: 'cron' | 'startup' | 'http'): Promise<void> {
+  if (epgImportCycleInProgress) {
+    app.log.warn({ trigger }, 'EPG import: pominięto – poprzedni cykl w toku');
+    return;
+  }
+
+  const forceIptv = env.EPG_SOURCE === 'iptv' || process.env.EPG_SOURCE === 'iptv';
+  const hasAkpaToken = !!(env.AKPA_API_TOKEN ?? process.env.AKPA_API_TOKEN);
+  const useAkpa = hasAkpaToken && !forceIptv;
+
+  epgImportCycleInProgress = true;
+  const t0 = Date.now();
+  try {
+    app.log.info(
+      { trigger, startedAt: new Date().toISOString(), source: useAkpa ? 'AKPA' : 'IPTV-Org' },
+      'EPG import cycle started',
+    );
+
+    if (!useAkpa) {
+      try {
+        await runConfiguredGrab(app.log);
+      } catch (error) {
+        app.log.error(error, 'Aktualizacja feedu (grab) nie powiodła się, kontynuuję import z istniejących danych.');
+      }
+      await pruneDisallowedChannels(app.prisma, app.log);
+    }
+
+    await runSelectedImport(app);
+
+    if (useAkpa) {
+      const maxAgeDays = Math.max(
+        1,
+        Number.parseInt(env.EPG_PRUNE_MAX_AGE_DAYS ?? process.env.EPG_PRUNE_MAX_AGE_DAYS ?? '14', 10) || 14,
+      );
+      const epgService = new EpgImportService(app.prisma, app.log);
+      await epgService.pruneOldPrograms(maxAgeDays);
+      const logoReason: LogoSyncReason = trigger === 'startup' ? 'startup' : trigger === 'http' ? 'http' : 'cron';
+      scheduleAkpaLogoSyncAfterImport(app, logoReason);
+    }
+
+    app.log.info(
+      { trigger, finishedAt: new Date().toISOString(), durationMs: Date.now() - t0 },
+      'EPG import cycle finished successfully',
+    );
+  } catch (error) {
+    app.log.error({ err: error, trigger, durationMs: Date.now() - t0 }, 'EPG import cycle failed');
+    throw error;
+  } finally {
+    epgImportCycleInProgress = false;
+  }
+}
+
 export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
   const forceIptv = env.EPG_SOURCE === 'iptv' || process.env.EPG_SOURCE === 'iptv';
   const hasAkpaToken = !!(env.AKPA_API_TOKEN ?? process.env.AKPA_API_TOKEN);
@@ -44,53 +105,32 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
     return null;
   }
 
-  const schedule = env.EPG_AUTO_IMPORT_SCHEDULE ?? (useAkpa ? '0 */6 * * *' : '0 3 * * *');
+  /** Co 4 h w Warszawie (wcześniej 6 h – częstsze odświeżanie gdy hosting restartuje kontenery i omija tick crona). */
+  const schedule = env.EPG_AUTO_IMPORT_SCHEDULE ?? (useAkpa ? '0 */4 * * *' : '0 3 * * *');
   const timezone = env.EPG_AUTO_IMPORT_TIMEZONE ?? 'Europe/Warsaw';
   const runOnStart = env.EPG_AUTO_IMPORT_RUN_ON_START ?? (useAkpa ? true : false);
 
   app.log.info(
-    `Scheduling EPG auto-import (${useAkpa ? 'AKPA' : 'IPTV-Org'}) with cron "${schedule}" (timezone ${timezone}).`,
+    {
+      msg: `Scheduling EPG auto-import (${useAkpa ? 'AKPA' : 'IPTV-Org'})`,
+      cron: schedule,
+      timezone,
+      note: 'Jeśli kontener często się restartuje, tick crona może nie wpaść w okno działania – ustaw EPG_HTTP_TRIGGER_SECRET i zewnętrzny cron na POST /epg/trigger.',
+    },
+    'EPG auto-import schedule',
   );
-
-  let isRunning = false;
 
   const task = cron.schedule(
     schedule,
     async () => {
-      if (isRunning) {
-        app.log.warn('EPG auto-import skipped: previous run still in progress.');
-        return;
-      }
-
-      isRunning = true;
       try {
         app.log.info(
-          { trigger: 'cron', schedule, timezone, startedAt: new Date().toISOString() },
-          'EPG auto-import started (cron tick).',
+          { trigger: 'cron', schedule, timezone, firedAt: new Date().toISOString() },
+          'EPG auto-import cron tick',
         );
-        if (!useAkpa) {
-          try {
-            await runConfiguredGrab(app.log);
-          } catch (error) {
-            app.log.error(error, 'Aktualizacja feedu (grab) nie powiodła się, kontynuuję import z istniejących danych.');
-          }
-          await pruneDisallowedChannels(app.prisma, app.log);
-        }
-        await runSelectedImport(app);
-        if (useAkpa) {
-          const maxAgeDays = Math.max(1, Number.parseInt(env.EPG_PRUNE_MAX_AGE_DAYS ?? process.env.EPG_PRUNE_MAX_AGE_DAYS ?? '14', 10) || 14);
-          const epgService = new EpgImportService(app.prisma, app.log);
-          await epgService.pruneOldPrograms(maxAgeDays);
-          scheduleAkpaLogoSyncAfterImport(app, 'cron');
-        }
-        app.log.info(
-          { trigger: 'cron', finishedAt: new Date().toISOString() },
-          'EPG auto-import finished successfully.',
-        );
-      } catch (error) {
-        app.log.error(error, 'EPG auto-import failed');
-      } finally {
-        isRunning = false;
+        await runEpgImportCycle(app, 'cron');
+      } catch {
+        /* błąd już w runEpgImportCycle */
       }
     },
     {
@@ -103,24 +143,7 @@ export function startEpgImportJob(app: FastifyInstance): ScheduledTask | null {
     setTimeout(async () => {
       try {
         app.log.info('Running initial EPG import on startup (after delay).');
-        if (!useAkpa) {
-          try {
-            await runConfiguredGrab(app.log);
-          } catch (error) {
-            app.log.error(error, 'Aktualizacja feedu (grab) na starcie nie powiodła się, używam bieżącego pliku.');
-          }
-          await pruneDisallowedChannels(app.prisma, app.log);
-        }
-        await runSelectedImport(app);
-        if (useAkpa) {
-          const maxAgeDays = Math.max(1, Number.parseInt(env.EPG_PRUNE_MAX_AGE_DAYS ?? process.env.EPG_PRUNE_MAX_AGE_DAYS ?? '14', 10) || 14);
-          const epgService = new EpgImportService(app.prisma, app.log);
-          await epgService.pruneOldPrograms(maxAgeDays);
-        }
-        app.log.info('Initial EPG import finished successfully.');
-        if (useAkpa) {
-          scheduleAkpaLogoSyncAfterImport(app, 'startup');
-        }
+        await runEpgImportCycle(app, 'startup');
       } catch (error) {
         app.log.error(
           {

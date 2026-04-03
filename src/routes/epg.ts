@@ -1,10 +1,10 @@
-import { FastifyInstance } from 'fastify';
-import fp from 'fastify-plugin';
+import type { FastifyInstance } from 'fastify';
 
 import { pruneDisallowedChannels } from '../services/iptv-org-importer';
 import { importIptvOrgEpg } from '../services/iptv-org-importer';
 import { importAkpaEpg } from '../services/akpa-importer';
 import { env } from '../config/env';
+import { runEpgImportCycle } from '../jobs/epg-import.job';
 
 async function runSelectedImport(app: FastifyInstance) {
   const forceIptv = env.EPG_SOURCE === 'iptv' || process.env.EPG_SOURCE === 'iptv';
@@ -62,7 +62,39 @@ async function runSelectedImport(app: FastifyInstance) {
   throw new Error('Brak konfiguracji źródła EPG (AKPA_API_TOKEN lub EPG_SOURCE_URL / EPG_SOURCE_FILE).');
 }
 
-const epgRoutes = fp(async (app: FastifyInstance) => {
+export default async function epgRoutes(app: FastifyInstance) {
+  /**
+   * Asynchroniczny import (202) – bez timeoutu reverse proxy. Ustaw EPG_HTTP_TRIGGER_SECRET
+   * i wywołuj z cron-job.org / GitHub Actions co kilka godzin, jeśli hosting często restartuje Node.
+   */
+  app.post('/trigger', async (request, reply) => {
+    const secret = env.EPG_HTTP_TRIGGER_SECRET;
+    if (!secret) {
+      return reply.code(503).send({
+        success: false,
+        error: 'EPG_HTTP_TRIGGER_SECRET is not configured',
+      });
+    }
+    const raw = request.headers['x-epg-trigger-secret'];
+    const token = Array.isArray(raw) ? raw[0] : raw;
+    if (!token || token !== secret) {
+      return reply.code(401).send({ success: false, error: 'Unauthorized' });
+    }
+
+    void Promise.resolve().then(async () => {
+      try {
+        await runEpgImportCycle(app, 'http');
+      } catch {
+        /* zalogowane w runEpgImportCycle */
+      }
+    });
+
+    return reply.code(202).send({
+      success: true,
+      message: 'EPG import queued (runs in background)',
+    });
+  });
+
   app.post('/import', async (request, reply) => {
     try {
       app.log.info('Manual EPG import started');
@@ -84,8 +116,6 @@ const epgRoutes = fp(async (app: FastifyInstance) => {
       });
     }
   });
-});
-
-export default epgRoutes;
+}
 
 

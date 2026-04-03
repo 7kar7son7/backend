@@ -21,6 +21,8 @@ const envSchema = z.object({
   EPG_AUTO_IMPORT_SCHEDULE: z.string().optional(),
   EPG_AUTO_IMPORT_TIMEZONE: z.string().optional(),
   EPG_AUTO_IMPORT_RUN_ON_START: z.coerce.boolean().optional(),
+  /** Sekret do POST /epg/trigger (np. cron z zewnątrz gdy hosting restartuje kontener i omija node-cron). */
+  EPG_HTTP_TRIGGER_SECRET: z.string().optional().transform((s) => s?.trim() || undefined),
   EPG_GRAB_ENABLED: z.coerce.boolean().optional(),
   EPG_GRAB_COMMAND: z.string().optional(),
   EPG_GRAB_WORKDIR: z.string().optional(),
