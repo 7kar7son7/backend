@@ -1,0 +1,237 @@
+import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
+
+import { akpaLogoThumbDataUrl } from '../utils/akpa-logo-thumbs';
+import { channelLogoUrlForResponse, resolveChannelLogoUrlForApi } from '../utils/channel-logo';
+import { programImageUrlForApi } from '../utils/program-photo-url';
+import { env } from '../config/env';
+import { ChannelService } from '../services/channel.service';
+import { ProgramService } from '../services/program.service';
+
+const listQuerySchema = z.object({
+  search: z.string().min(2).optional(),
+  /** Comma-separated channel UUIDs – zwróć tylko te kanały (np. ulubione). Optymalizacja: jeden request zamiast ładowania wszystkich. */
+  channelIds: z
+    .string()
+    .optional()
+    .transform((s) => (s ? s.split(',').map((id) => id.trim()).filter(Boolean) : undefined)),
+  includePrograms: z
+    .union([z.literal('true'), z.literal('false')])
+    .optional()
+    .transform((value) => (value ? value === 'true' : undefined)),
+  limit: z
+    .string()
+    .optional()
+    .transform((value) => (value ? Number.parseInt(value, 10) : undefined)),
+  offset: z
+    .string()
+    .optional()
+    .transform((value) => (value ? Number.parseInt(value, 10) : undefined)),
+});
+
+const programsQuerySchema = z.object({
+  from: z
+    .string()
+    .datetime()
+    .optional()
+    .transform((value) => (value ? new Date(value) : undefined)),
+  to: z
+    .string()
+    .datetime()
+    .optional()
+    .transform((value) => (value ? new Date(value) : undefined)),
+});
+
+const CHANNEL_PROGRAMS_CACHE_TTL_MS = 120 * 1000; // 120 s – ramówka dnia rzadko się zmienia w locie
+const channelProgramsCache = new Map<string, { payload: unknown; expiresAt: number }>();
+const CHANNEL_SINGLE_CACHE_TTL_MS = 90 * 1000; // 90 s
+const channelSingleCache = new Map<string, { payload: unknown; expiresAt: number }>();
+
+/** Cache listy kanałów z programami (GET /channels?includePrograms=true&limit=…) – TTL 60 s, ogranicza obciążenie przy starcie aplikacji */
+const CHANNEL_LIST_CACHE_TTL_MS = 60 * 1000;
+const channelListCache = new Map<string, { payload: unknown; expiresAt: number }>();
+
+export default async function channelsRoutes(app: FastifyInstance) {
+  const channelService = new ChannelService(app.prisma);
+  const programService = new ProgramService(app.prisma);
+
+  app.get('/', async (request, reply) => {
+    const query = listQuerySchema.parse(request.query);
+    const includePrograms = query.includePrograms === true ? true : undefined;
+    const filters: {
+      search?: string;
+      includePrograms?: boolean;
+      limit?: number;
+      offset?: number;
+      channelIds?: string[];
+    } = {};
+    if (query.search) filters.search = query.search;
+    if (includePrograms) filters.includePrograms = true;
+    if (query.channelIds?.length) filters.channelIds = query.channelIds;
+    if (query.limit !== undefined) filters.limit = query.limit;
+    if (query.offset !== undefined) filters.offset = query.offset;
+
+    if (includePrograms && !query.search) {
+      const cacheKey = `list_${filters.limit ?? ''}_${filters.offset ?? 0}_${(filters.channelIds ?? []).slice().sort().join(',')}`;
+      const cached = channelListCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        request.log.info({ cacheKey }, 'GET /channels – lista z programami z cache');
+        return reply
+          .header('Cache-Control', 'private, max-age=60')
+          .type('application/json')
+          .send(cached.payload);
+      }
+    }
+
+    const channels = await channelService.listChannels(filters);
+    request.log.info(
+      { count: channels.length, limit: filters.limit, offset: filters.offset, byIds: !!filters.channelIds?.length },
+      'GET /channels – lista kanałów',
+    );
+
+    // Lista: NIE wstawiamy data URL (60× base64 = RangeError: Invalid string length przy JSON.stringify).
+    // logoUrl tylko jako pełny URL – logotypy z GET /logos/akpa/:id (lub embedded na prod).
+    const formattedChannels = channels.map((channel) => {
+      const resolvedLogoUrl = resolveChannelLogoUrlForApi(channel);
+      const logoThumbDataUrl = akpaLogoThumbDataUrl(String(channel.externalId));
+      const base: Record<string, unknown> = {
+        id: String(channel.id),
+        externalId: String(channel.externalId),
+        name: String(channel.name),
+        description: channel.description != null ? String(channel.description) : null,
+        logoUrl: resolvedLogoUrl ?? null,
+        logoThumbDataUrl: logoThumbDataUrl ?? null,
+        category: channel.category != null ? String(channel.category) : null,
+        countryCode: channel.countryCode != null ? String(channel.countryCode) : null,
+      };
+
+      if (!includePrograms) {
+        return base;
+      }
+
+      const programs = ('programs' in channel && Array.isArray(channel.programs)) ? channel.programs : [];
+      const programsList = programs.map((program: any) => ({
+        id: String(program.id),
+        title: String(program.title),
+        channelId: String(program.channelId),
+        channelName: String(channel.name),
+        channelExternalId: String(channel.externalId),
+        channelLogoUrl: resolvedLogoUrl ?? null,
+        channelLogoThumbDataUrl: logoThumbDataUrl ?? null,
+        description: program.description != null ? String(program.description) : null,
+        seasonNumber: program.seasonNumber ?? null,
+        episodeNumber: program.episodeNumber ?? null,
+        startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
+        endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
+        imageUrl: programImageUrlForApi(program.imageUrl, env.PUBLIC_API_URL, { programId: String(program.id), hasImageData: Boolean((program as { imageHasData?: boolean }).imageHasData) }) ?? (program.imageUrl != null ? String(program.imageUrl) : null) ?? (resolvedLogoUrl ?? null),
+        tags: Array.isArray(program.tags) ? program.tags.map((t: unknown) => String(t)) : [],
+      }));
+      // Zawsze zwracaj "programs" gdy includePrograms=true (nawet []), żeby ekran katalogu/guide widział te same klucze i pokazywał kanały.
+      return { ...base, programs: programsList };
+    });
+
+    const payload = { data: formattedChannels };
+    if (includePrograms && !query.search) {
+      const cacheKey = `list_${filters.limit ?? ''}_${filters.offset ?? 0}_${(filters.channelIds ?? []).slice().sort().join(',')}`;
+      channelListCache.set(cacheKey, {
+        payload,
+        expiresAt: Date.now() + CHANNEL_LIST_CACHE_TTL_MS,
+      });
+    }
+
+    return reply
+      .header('Cache-Control', 'private, max-age=60')
+      .type('application/json')
+      .send(payload);
+  });
+
+  app.get('/:channelId', async (request, reply) => {
+    const params = z.object({ channelId: z.string().uuid() }).parse(request.params);
+    const cached = channelSingleCache.get(params.channelId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return reply.header('Cache-Control', 'private, max-age=60').send(cached.payload);
+    }
+
+    const channel = await channelService.getChannel(params.channelId);
+
+    if (!channel) {
+      return reply.notFound('Channel not found');
+    }
+
+    const logoUrl = channelLogoUrlForResponse(channel);
+    const logoThumbDataUrl = akpaLogoThumbDataUrl(String(channel.externalId));
+    const payload = {
+      data: {
+        ...channel,
+        logoUrl,
+        logoThumbDataUrl: logoThumbDataUrl ?? null,
+      },
+    };
+    channelSingleCache.set(params.channelId, {
+      payload,
+      expiresAt: Date.now() + CHANNEL_SINGLE_CACHE_TTL_MS,
+    });
+    return reply
+      .header('Cache-Control', 'private, max-age=60')
+      .send(payload);
+  });
+
+  app.get('/:channelId/programs', async (request, reply) => {
+    const params = z.object({ channelId: z.string().uuid() }).parse(request.params);
+    const query = programsQuerySchema.parse(request.query);
+
+    const filter: { from?: Date; to?: Date } = {};
+    if (query.from) {
+      filter.from = query.from;
+    }
+    if (query.to) {
+      filter.to = query.to;
+    }
+
+    const cacheKey = `${params.channelId}_${query.from?.toISOString() ?? ''}_${query.to?.toISOString() ?? ''}`;
+    const cached = channelProgramsCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return reply.header('Cache-Control', 'private, max-age=60').send(cached.payload);
+    }
+
+    const [programs, channel] = await Promise.all([
+      programService.listUpcomingByChannel(params.channelId, filter),
+      channelService.getChannel(params.channelId),
+    ]);
+    if (!channel) {
+      return reply.notFound('Channel not found');
+    }
+
+    const logoUrl = channelLogoUrlForResponse(channel);
+    const logoThumbDataUrl = akpaLogoThumbDataUrl(String(channel.externalId));
+    const payload = {
+      data: {
+        channel: { ...channel, logoUrl, logoThumbDataUrl: logoThumbDataUrl ?? null },
+        programs: programs.map((program) => ({
+          id: program.id,
+          title: program.title,
+          channelId: program.channelId,
+          channelName: channel.name,
+          channelExternalId: String(channel.externalId),
+          channelLogoUrl: logoUrl,
+          channelLogoThumbDataUrl: logoThumbDataUrl ?? null,
+          description: program.description ?? null,
+          seasonNumber: program.seasonNumber ?? null,
+          episodeNumber: program.episodeNumber ?? null,
+          startsAt: program.startsAt instanceof Date ? program.startsAt.toISOString() : program.startsAt,
+          endsAt: program.endsAt instanceof Date ? program.endsAt.toISOString() : program.endsAt,
+          imageUrl: programImageUrlForApi(program.imageUrl, env.PUBLIC_API_URL, { programId: program.id, hasImageData: program.imageHasData }) ?? program.imageUrl ?? logoUrl ?? null,
+          tags: program.tags ?? [],
+        })),
+      },
+    };
+    channelProgramsCache.set(cacheKey, {
+      payload,
+      expiresAt: Date.now() + CHANNEL_PROGRAMS_CACHE_TTL_MS,
+    });
+    return reply
+      .header('Cache-Control', 'private, max-age=60')
+      .send(payload);
+  });
+}
+
