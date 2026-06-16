@@ -1,30 +1,37 @@
-FROM node:20-alpine
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Kopiuj pliki package
 COPY package*.json ./
 COPY prisma ./prisma/
 COPY tsconfig.json ./
 
-# Zainstaluj wszystkie zależności (też dev dla builda)
 RUN npm ci
 
-# Wygeneruj Prisma Client (przed buildem TypeScript)
 RUN npx prisma generate
 
-# Skopiuj kod źródłowy
 COPY src ./src
-
-# static/logos/akpa – fallback na dysku; pełny zestaw jest też w src/data/embedded-akpa-logos.*
 COPY static ./static/
 
-# Zbuduj TypeScript
 RUN npm run build
 
-# Usuń dev dependencies (opcjonalne, oszczędza miejsce)
-RUN npm prune --production
+FROM node:20-alpine AS runner
 
-# Uruchom migracje i start z większym limitem pamięci dla dużych plików EPG
-CMD ["sh", "-c", "npx prisma migrate deploy && node --max-old-space-size=2048 dist/server.js"]
+WORKDIR /app
 
+ENV NODE_ENV=production
+
+COPY package*.json ./
+COPY prisma ./prisma/
+COPY scripts ./scripts/
+RUN chmod +x scripts/start-production.sh
+
+# Produkcja: prisma CLI + @prisma/client (migrate deploy przy starcie)
+RUN npm ci --omit=dev && npx prisma generate
+
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/static ./static
+
+EXPOSE 3000
+
+CMD ["sh", "scripts/start-production.sh"]

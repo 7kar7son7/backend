@@ -1,0 +1,7 @@
+{
+  "type": "node",
+  "buildCommand": "npm ci && npx prisma generate && npm run build",
+  "startCommand": "sh scripts/start-production.sh",
+  "healthCheckPath": "/ready",
+  "port": 3000
+}

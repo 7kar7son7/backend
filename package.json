@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "rimraf dist && tsc && node -e \"const fs=require('fs'); const path=require('path'); function copyPair(rel){ const p=path.join('src','data',rel); if(!fs.existsSync(p)) return; fs.mkdirSync('dist/data',{recursive:true}); fs.copyFileSync(p,path.join('dist','data',rel)); fs.mkdirSync('data',{recursive:true}); fs.copyFileSync(p,path.join('data',rel)); } copyPair('akpa-logo-folder-map.json'); copyPair('akpa-logo-thumbs.json');\"",
-    "start": "node dist/server.js",
+    "postinstall": "prisma generate",
+    "start": "sh scripts/start-production.sh",
+    "start:server": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
@@ -34,11 +36,13 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "BackOn.tv API (Fastify + Prisma)",
+  "engines": {
+    "node": ">=20"
+  },
   "devDependencies": {
     "@types/luxon": "^3.7.1",
     "@types/node": "^24.10.0",
-    "prisma": "^6.19.0",
     "rimraf": "^6.1.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.6",
@@ -51,6 +55,7 @@
     "@fastify/jwt": "^10.0.0",
     "@fastify/sensible": "^6.0.3",
     "@prisma/client": "^6.19.0",
+    "prisma": "^6.19.0",
     "dotenv": "^17.2.3",
     "fast-xml-parser": "^4.4.3",
     "fastify": "^5.6.2",

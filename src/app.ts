@@ -41,6 +41,17 @@ export async function buildApp(): Promise<FastifyInstance> {
     forceCloseConnections: true,
   });
 
+  // Liveness od razu – health check PaaS (port/ready) nie czeka na DB ani migracje.
+  app.get('/', async () => ({
+    status: 'ok',
+    service: 'backon-api',
+    timestamp: new Date().toISOString(),
+  }));
+  app.get('/ready', async () => ({
+    status: 'ready',
+    timestamp: new Date().toISOString(),
+  }));
+
   await app.register(fastifyHelmet, {
     contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' },

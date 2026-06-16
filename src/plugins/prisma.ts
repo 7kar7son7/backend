@@ -15,16 +15,17 @@ prisma.$on('error' as never, (e: { message: string; target?: string }) => {
 });
 
 export default fp(async (fastify) => {
-  // Test połączenia przy starcie
-  try {
-    await prisma.$connect();
-    fastify.log.info('✅ Database connection established');
-  } catch (error) {
-    fastify.log.error(error, '❌ Failed to connect to database');
-    throw error;
-  }
-
   fastify.decorate('prisma', prisma);
+
+  // Nie blokuj startu serwera – Branchly/DevStudio wymaga odpowiedzi na porcie w ~90s.
+  void prisma
+    .$connect()
+    .then(() => {
+      fastify.log.info('✅ Database connection established');
+    })
+    .catch((error) => {
+      fastify.log.error(error, '❌ Failed to connect to database (retry on next query)');
+    });
 
   fastify.addHook('onClose', async () => {
     await prisma.$disconnect();
