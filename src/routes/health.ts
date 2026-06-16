@@ -33,7 +33,8 @@ const healthRoutes = fp(async (app) => {
     };
   });
 
-  app.get('/', async () => {
+  /** Pełny health z testem bazy — pod /health/status (nie /, bo root / jest dla PaaS). */
+  app.get('/status', async () => {
     let database: 'ok' | 'error' = 'ok';
 
     try {
