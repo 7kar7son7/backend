@@ -1,6 +1,7 @@
 import {
   EventChoice,
   EventStatus,
+  EventType,
   FollowType,
   Prisma,
   PrismaClient,
@@ -15,7 +16,12 @@ const EVENT_CONFIRMATION_THRESHOLD = env.EVENT_CONFIRMATION_THRESHOLD ?? 2;
 export class EventService {
   constructor(private readonly prisma: PrismaClient) {}
 
-  async createEvent(deviceId: string, programId: string, options?: { skipInitiatorFollow?: boolean }) {
+  async createEvent(
+    deviceId: string,
+    programId: string,
+    options?: { skipInitiatorFollow?: boolean; eventType?: EventType },
+  ) {
+    const eventType = options?.eventType ?? EventType.AD_BREAK_END;
     const program = await this.prisma.program.findUnique({
       where: { id: programId },
       select: {
@@ -36,6 +42,7 @@ export class EventService {
     const activeEvent = await this.prisma.event.findFirst({
       where: {
         programId,
+        eventType,
         status: EventStatus.PENDING,
         expiresAt: {
           gte: now,
@@ -59,6 +66,7 @@ export class EventService {
         data: {
           programId,
           initiatorDeviceId: deviceId,
+          eventType,
           status: EventStatus.PENDING,
           expiresAt,
           followerCountLimit: EVENT_CONFIRMATION_THRESHOLD,

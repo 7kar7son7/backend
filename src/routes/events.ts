@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { EventChoice, EventStatus, Prisma } from '@prisma/client';
+import { EventChoice, EventStatus, EventType, Prisma } from '@prisma/client';
 import { z } from 'zod';
 
 import { EventService } from '../services/event.service';
@@ -18,6 +18,8 @@ const RATE_LIMIT_CONFIRM = env.EVENT_RATE_LIMIT_CONFIRM_PER_MIN ?? 30;
 
 const createEventSchema = z.object({
   programId: z.string().uuid(),
+  /** Opcjonalne — stare APK wysyłają tylko programId (= KONIEC REKLAM). */
+  eventType: z.nativeEnum(EventType).optional().default(EventType.AD_BREAK_END),
 });
 
 const adminEventSchema = z.object({
@@ -131,7 +133,11 @@ export default async function eventsRoutes(app: FastifyInstance) {
       const { event, followerDeviceIds } = await eventService.createEvent(
         deviceId,
         body.programId,
+        { eventType: body.eventType },
       );
+
+      const isAdStart = event.eventType === EventType.AD_BREAK_START;
+      const pushLabel = isAdStart ? 'START REKLAM' : 'KONIEC REKLAM';
 
       // Natychmiast wyślij push „KONIEC REKLAM” do wszystkich obserwujących (oprócz inicjatora),
       // żeby na ich telefonach pojawił się popup do potwierdzenia.
@@ -148,6 +154,7 @@ export default async function eventsRoutes(app: FastifyInstance) {
             channelId: event.program.channelId,
             programTitle: channelName ? `${channelName}: ${programTitle}` : programTitle,
             startsAt: event.program.startsAt.toISOString(),
+            eventType: event.eventType,
             channelLogoUrl: event.program.channel
               ? resolveChannelLogoUrlForApi(event.program.channel)
               : null,
@@ -165,22 +172,22 @@ export default async function eventsRoutes(app: FastifyInstance) {
             {
               eventId: event.id,
               programId: body.programId,
+              eventType: event.eventType,
               followerCountLimit: event.followerCountLimit,
               recipientsCount: recipientDeviceIds.length,
             },
-            'Event created; initial KONIEC REKLAM notification sent to followers',
+            `Event created; initial ${pushLabel} notification sent to followers`,
           );
         } else {
           request.log.info(
-            { eventId: event.id, programId: body.programId },
-            'Event created; no followers to notify about KONIEC REKLAM',
+            { eventId: event.id, programId: body.programId, eventType: event.eventType },
+            `Event created; no followers to notify about ${pushLabel}`,
           );
         }
       } catch (notifyError) {
-        // Nie blokuj utworzenia eventu jeśli wysyłka powiadomień się nie uda
         request.log.warn(
           notifyError,
-          'Failed to send initial KONIEC REKLAM notification after event creation',
+          `Failed to send initial ${pushLabel} notification after event creation`,
         );
       }
 

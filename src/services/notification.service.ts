@@ -1,4 +1,4 @@
-import { PrismaClient, NotificationSensitivity } from '@prisma/client';
+import { PrismaClient, NotificationSensitivity, EventType } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 
 import { env } from '../config/env';
@@ -59,14 +59,18 @@ export class NotificationService {
       return;
     }
 
-    // Upewnij się, że mamy czytelną treść powiadomienia
+    const isAdStart = payload.eventType === EventType.AD_BREAK_START;
     const programTitle = payload.programTitle || 'Program';
-    const notificationBody = programTitle.length > 50 
-      ? `${programTitle.substring(0, 47)}... - reklamy zakończone? Potwierdź!`
-      : `${programTitle} - reklamy zakończone? Potwierdź!`;
-    
+    const notificationBody = isAdStart
+      ? (programTitle.length > 50
+          ? `${programTitle.substring(0, 47)}... - reklamy się zaczęły? Potwierdź!`
+          : `${programTitle} - reklamy się zaczęły? Potwierdź!`)
+      : (programTitle.length > 50
+          ? `${programTitle.substring(0, 47)}... - reklamy zakończone? Potwierdź!`
+          : `${programTitle} - reklamy zakończone? Potwierdź!`);
+
     const message: PushMessage = {
-      title: 'KONIEC REKLAM',
+      title: isAdStart ? 'START REKLAM' : 'KONIEC REKLAM',
       body: notificationBody,
       androidChannelId: ANDROID_CHANNEL_IDS.events,
       data: {
@@ -75,6 +79,7 @@ export class NotificationService {
         programId: payload.programId,
         channelId: payload.channelId,
         startsAt: payload.startsAt,
+        eventType: payload.eventType ?? EventType.AD_BREAK_END,
       },
     };
     
@@ -779,6 +784,7 @@ type ReminderPayload = {
   channelId: string;
   programTitle: string;
   startsAt: string;
+  eventType?: EventType;
   channelLogoUrl?: string | null;
   /** data:image/webp;base64,... – tylko do payloadu data w aplikacji; FCM image nadal z channelLogoUrl (HTTPS). */
   channelLogoThumbDataUrl?: string | null;
