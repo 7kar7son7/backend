@@ -11,6 +11,7 @@ import programsRoutes from './programs';
 import epgRoutes from './epg';
 import logosRoutes from './logos';
 import photosRoutes from './photos';
+import adBreakStatsRoutes from './ad-break-stats';
 
 export async function registerRoutes<T extends import('fastify').FastifyInstance>(
   app: T,
@@ -21,6 +22,7 @@ export async function registerRoutes<T extends import('fastify').FastifyInstance
   await app.register(channelsRoutes, { prefix: '/channels' });
   await app.register(followsRoutes, { prefix: '/follows' });
   await app.register(eventsRoutes, { prefix: '/events' });
+  await app.register(adBreakStatsRoutes, { prefix: '/ad-breaks' });
   await app.register(deviceTokensRoutes, { prefix: '/device/tokens' });
   await app.register(pointsRoutes, { prefix: '/points' });
   await app.register(programsRoutes, { prefix: '/programs' });

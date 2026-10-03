@@ -18,6 +18,7 @@ import { startEpgImportJob } from './jobs/epg-import.job';
 import { startEpgPruneJob } from './jobs/epg-prune.job';
 import { startDailyReminderJob } from './jobs/daily-reminder.job';
 import { startProgramStartReminderJob } from './jobs/event-notification.job';
+import { startAdBreakStatsJob } from './jobs/ad-break-stats.job';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const loggerOptions: FastifyServerOptions['logger'] =
@@ -113,6 +114,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   let epgPruneTask: ScheduledTask | null = null;
   let dailyReminderTask: { stop: () => void } | null = null;
   let startSoonTask: ScheduledTask | null = null;
+  let adBreakStatsTask: ScheduledTask | null = null;
 
   app.addHook('onReady', async () => {
     reminderTask = startReminderJob(app);
@@ -137,6 +139,9 @@ export async function buildApp(): Promise<FastifyInstance> {
 
     startSoonTask = startProgramStartReminderJob(app);
     app.log.info('Program start reminder job scheduled');
+
+    adBreakStatsTask = startAdBreakStatsJob(app);
+    app.log.info('Ad-break stats job scheduled');
   });
 
   app.addHook('onClose', async () => {
@@ -159,6 +164,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     if (startSoonTask) {
       startSoonTask.stop();
       app.log.info('Program start reminder job stopped');
+    }
+    if (adBreakStatsTask) {
+      adBreakStatsTask.stop();
+      app.log.info('Ad-break stats job stopped');
     }
   });
 
